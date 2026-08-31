@@ -35,12 +35,12 @@ button:disabled{opacity:.6;cursor:not-allowed}
 .records{margin-top:8px;max-height:min(56vh,480px);overflow:auto;border:1px solid #e5e7eb;border-radius:12px}
 .log-table{width:100%;border-collapse:collapse;font-size:13px}
 .log-table th{position:sticky;top:0;background:#f8fafc;text-align:left;padding:10px 12px;color:#6b7280;font-weight:650;border-bottom:1px solid #e5e7eb;white-space:nowrap}
-.log-table td{padding:9px 12px;border-bottom:1px solid #f3f4f6;vertical-align:middle}
+.log-table td{padding:9px 12px;border-bottom:1px solid #f3f4f6;vertical-align:middle;white-space:nowrap}
 .log-table tr:last-child td{border-bottom:0}
 .log-table tr:hover td{background:#f8fafc}
 .log-table tr.fail td{background:#fef2f2}
 .log-table tr.fail:hover td{background:#fee2e2}
-.pill{display:inline-flex;align-items:center;border-radius:999px;padding:2px 8px;font-size:12px;font-weight:700}
+.pill{display:inline-flex;align-items:center;border-radius:999px;padding:2px 8px;font-size:12px;font-weight:700;white-space:nowrap}
 .pill.ok{background:#ecfdf5;color:#047857}
 .pill.fail{background:#fee2e2;color:#b91c1c}
 .pill.skip{background:#eff6ff;color:#1d4ed8}
@@ -70,7 +70,7 @@ button:disabled{opacity:.6;cursor:not-allowed}
 <main>
 <section>
 <div id="loginGate">
-  <h1>Quota Schedule Refresh <span class="badge">v0.7.5</span></h1>
+  <h1>Quota Schedule Refresh <span class="badge">v0.7.6</span></h1>
   <p>正在尝试复用 CPA Manager 的登录会话。若自动读取失败，请填写 CPA 管理密钥。</p>
   <label for="managementKey">CPA 管理密钥</label>
   <input id="managementKey" type="password" autocomplete="current-password" placeholder="请输入 CPA 管理密钥">
@@ -78,7 +78,7 @@ button:disabled{opacity:.6;cursor:not-allowed}
   <p class="status" id="loginMsg">正在自动读取会话…</p>
 </div>
 <div id="appShell" hidden>
-  <h1>Quota Schedule Refresh <span class="badge">v0.7.5</span></h1>
+  <h1>Quota Schedule Refresh <span class="badge">v0.7.6</span></h1>
   <p>每天按设定时刻通过 CPA 接口刷新 Codex 额度窗口。也可手动勾选凭证执行。所有设置在「设置」页签内维护。</p>
   <p class="status" id="statusLine">正在读取状态…</p>
   <nav class="tabs">

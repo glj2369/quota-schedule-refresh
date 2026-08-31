@@ -16,7 +16,7 @@ import (
 	"quota-schedule-refresh/internal/wake"
 )
 
-const pluginVersion = "0.7.5"
+const pluginVersion = "0.7.6"
 
 const busyRetryInterval = 30 * time.Second
 
