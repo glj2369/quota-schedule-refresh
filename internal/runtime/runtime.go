@@ -15,7 +15,7 @@ import (
 	"quota-schedule-refresh/internal/wake"
 )
 
-const pluginVersion = "0.6.6"
+const pluginVersion = "0.6.7"
 
 const busyRetryInterval = 30 * time.Second
 
@@ -576,7 +576,7 @@ func (r *Runtime) registrationResult() RegisterResult {
 		Metadata: Metadata{
 			Name:             "Quota Schedule Refresh",
 			Version:          pluginVersion,
-			Author:           "ssgs",
+			Author:           "glj",
 			GitHubRepository: "https://github.com/glj2369/quota-schedule-refresh",
 			Description:      "每天按设定时刻通过 CPA 接口刷新 Codex 额度窗口。",
 			ConfigFields: []ConfigField{
