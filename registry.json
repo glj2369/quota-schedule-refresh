@@ -6,7 +6,7 @@
       "name": "Quota Schedule Refresh",
       "description": "定时刷新 Codex 额度窗口",
       "author": "glj",
-      "version": "0.7.1",
+      "version": "0.7.2",
       "repository": "https://github.com/glj2369/quota-schedule-refresh",
       "homepage": "https://github.com/glj2369/quota-schedule-refresh",
       "license": "MIT",

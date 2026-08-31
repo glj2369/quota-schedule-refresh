@@ -16,10 +16,7 @@ type settingsPayload struct {
 }
 
 func (r *Runtime) settingsView() settingsPayload {
-	models := r.cpaModels()
-	if len(models) == 0 {
-		models = r.listedModels()
-	}
+	models := r.availableModels()
 	_, stored, _ := r.settings.Load()
 	r.mu.Lock()
 	current := r.config

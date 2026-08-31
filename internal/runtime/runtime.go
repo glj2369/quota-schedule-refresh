@@ -16,7 +16,7 @@ import (
 	"quota-schedule-refresh/internal/wake"
 )
 
-const pluginVersion = "0.7.1"
+const pluginVersion = "0.7.2"
 
 const busyRetryInterval = 30 * time.Second
 
@@ -43,6 +43,8 @@ type Runtime struct {
 	history       []historyEntry
 	preferredAuth string
 	fallbackMu    sync.Mutex
+	modelsMu      sync.Mutex
+	modelsCache   []string
 	running       bool
 	scheduleKey   string
 }
@@ -390,11 +392,7 @@ func (r *Runtime) listedModels() []string {
 }
 
 func (r *Runtime) firstListedModel() string {
-	models := r.cpaModels()
-	if len(models) == 0 {
-		models = r.listedModels()
-	}
-	if len(models) > 0 {
+	if models := r.availableModels(); len(models) > 0 {
 		return models[0]
 	}
 	return "gpt-5-mini"

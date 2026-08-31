@@ -68,7 +68,7 @@ button:disabled{opacity:.6;cursor:not-allowed}
 <main>
 <section>
 <div id="loginGate">
-  <h1>Quota Schedule Refresh <span class="badge">v0.7.1</span></h1>
+  <h1>Quota Schedule Refresh <span class="badge">v0.7.2</span></h1>
   <p>正在尝试复用 CPA Manager 的登录会话。若自动读取失败，请填写 CPA 管理密钥。</p>
   <label for="managementKey">CPA 管理密钥</label>
   <input id="managementKey" type="password" autocomplete="current-password" placeholder="请输入 CPA 管理密钥">
@@ -76,7 +76,7 @@ button:disabled{opacity:.6;cursor:not-allowed}
   <p class="status" id="loginMsg">正在自动读取会话…</p>
 </div>
 <div id="appShell" hidden>
-  <h1>Quota Schedule Refresh <span class="badge">v0.7.1</span></h1>
+  <h1>Quota Schedule Refresh <span class="badge">v0.7.2</span></h1>
   <p>每天按设定时刻通过 CPA 接口刷新 Codex 额度窗口。也可手动勾选凭证执行。所有设置在「设置」页签内维护。</p>
   <p class="status" id="statusLine">正在读取状态…</p>
   <nav class="tabs">
@@ -110,8 +110,9 @@ button:disabled{opacity:.6;cursor:not-allowed}
       </div>
       <div class="field">
         <label for="f_model">刷新使用的模型</label>
-        <select id="f_model"></select>
-        <p class="hint">留空则用 CPA 模型列表第一项。</p>
+        <input id="f_model" type="text" list="modelOptions" placeholder="留空自动选择" autocomplete="off">
+        <datalist id="modelOptions"></datalist>
+        <p class="hint" id="modelHint">留空则用 CPA 模型列表第一项。</p>
       </div>
       <div class="field">
         <label for="f_timeout_seconds">单次请求超时（秒）</label>
@@ -361,14 +362,14 @@ function fillSettings(view){
   document.getElementById("f_schedule_enabled").checked=!!s.schedule_enabled;
   document.getElementById("f_skip_gpt_pro").checked=!!s.skip_gpt_pro;
   document.getElementById("f_enable_disabled").checked=!!s.enable_disabled;
-  const select=document.getElementById("f_model");
   const models=(view.models||[]).slice();
-  const current=s.model||"";
-  if(current&&models.indexOf(current)<0) models.unshift(current);
-  select.innerHTML='<option value="">自动（列表第一项）</option>'+models.map(function(name){
-    return '<option value="'+esc(name)+'">'+esc(name)+'</option>';
+  document.getElementById("f_model").value=s.model||"";
+  document.getElementById("modelOptions").innerHTML=models.map(function(name){
+    return '<option value="'+esc(name)+'"></option>';
   }).join("");
-  select.value=current;
+  document.getElementById("modelHint").textContent=models.length
+    ?("留空则用列表第一项（"+esc(models[0])+"）。可从 "+models.length+" 个模型中选择或直接输入。")
+    :"未能读取 CPA 模型列表，可直接输入模型名，或留空由凭证自身的模型列表决定。";
   document.getElementById("settingsPath").textContent=
     (view.stored?"设置文件：":"尚未保存过，将写入：")+(view.path||"-");
 }
@@ -377,7 +378,7 @@ function readSettings(){
     schedule_enabled:document.getElementById("f_schedule_enabled").checked,
     daily_at:document.getElementById("f_daily_at").value.trim(),
     timezone:document.getElementById("f_timezone").value.trim(),
-    model:document.getElementById("f_model").value,
+    model:document.getElementById("f_model").value.trim(),
     timeout_seconds:numValue("f_timeout_seconds",0),
     enable_disabled:document.getElementById("f_enable_disabled").checked,
     skip_gpt_pro:document.getElementById("f_skip_gpt_pro").checked,

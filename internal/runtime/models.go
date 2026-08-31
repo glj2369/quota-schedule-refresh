@@ -13,6 +13,41 @@ import (
 	"quota-schedule-refresh/internal/host"
 )
 
+// availableModels 优先实时查询 CPA，失败时沿用上次成功的结果。
+// 查询走本机 HTTP，偶发超时会让模型列表整体变空，设置页因此选不了模型。
+func (r *Runtime) availableModels() []string {
+	if fresh := r.cpaModels(); len(fresh) > 0 {
+		r.rememberModels(fresh)
+		return fresh
+	}
+	if cached := r.cachedModels(); len(cached) > 0 {
+		return cached
+	}
+	if listed := r.listedModels(); len(listed) > 0 {
+		r.rememberModels(listed)
+		return listed
+	}
+	return nil
+}
+
+func (r *Runtime) rememberModels(models []string) {
+	if r == nil || len(models) == 0 {
+		return
+	}
+	r.modelsMu.Lock()
+	r.modelsCache = append([]string(nil), models...)
+	r.modelsMu.Unlock()
+}
+
+func (r *Runtime) cachedModels() []string {
+	if r == nil {
+		return nil
+	}
+	r.modelsMu.Lock()
+	defer r.modelsMu.Unlock()
+	return append([]string(nil), r.modelsCache...)
+}
+
 func (r *Runtime) cpaModels() []string {
 	if r == nil || r.host == nil {
 		return nil
