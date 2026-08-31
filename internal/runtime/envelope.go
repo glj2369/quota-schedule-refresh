@@ -25,10 +25,6 @@ type EnvelopeError struct {
 	Retryable bool   `json:"retryable"`
 }
 
-type RegisterRequest struct {
-	ConfigYAML string `json:"config_yaml"`
-}
-
 func decodeConfigYAML(raw []byte) (string, error) {
 	if len(raw) == 0 {
 		return "", nil

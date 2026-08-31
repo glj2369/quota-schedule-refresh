@@ -89,6 +89,10 @@ func cliproxy_plugin_init(hostAPI *C.cliproxy_host_api, plugin *C.cliproxy_plugi
 		return -1
 	}
 	C.store_quota_schedule_refresh_host_api(hostAPI)
+	// 宿主重复调用 init 时，先停掉上一个实例的调度协程再换新的。
+	if cpaRuntime != nil {
+		_ = cpaRuntime.Shutdown()
+	}
 	cpaRuntime = pluginruntime.New(hostCallbackAdapter{})
 	C.set_quota_schedule_refresh_plugin_api(plugin)
 	return 0

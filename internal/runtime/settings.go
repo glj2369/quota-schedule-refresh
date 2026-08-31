@@ -31,15 +31,18 @@ func (r *Runtime) settingsView() settingsPayload {
 
 // saveSettings 先校验再落盘，最后热应用，避免写入无法启动的配置。
 func (r *Runtime) saveSettings(body []byte) (settingsPayload, error) {
+	// 必须带 settings 字段：布尔项没有「未填写」的表示，
+	// 空请求体一旦被当成合法输入就会静默关掉所有开关。
 	var wire struct {
 		Settings *config.Settings `json:"settings"`
 	}
-	incoming := config.Settings{}
-	if err := json.Unmarshal(body, &wire); err == nil && wire.Settings != nil {
-		incoming = *wire.Settings
-	} else if err := json.Unmarshal(body, &incoming); err != nil {
+	if err := json.Unmarshal(body, &wire); err != nil {
 		return settingsPayload{}, fmt.Errorf("%w: 设置内容无法解析", ErrInvalidRequest)
 	}
+	if wire.Settings == nil {
+		return settingsPayload{}, fmt.Errorf("%w: 请求体缺少 settings 字段", ErrInvalidRequest)
+	}
+	incoming := *wire.Settings
 
 	r.mu.Lock()
 	base := r.baseConfig

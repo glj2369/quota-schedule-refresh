@@ -4,11 +4,8 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 )
-
-var ErrModelExecuteStatus = errors.New("host model execute status")
 
 type Client interface {
 	ModelExecute(ctx context.Context, request ModelExecuteRequest) (ModelExecuteResponse, error)

@@ -16,9 +16,13 @@ import (
 	"quota-schedule-refresh/internal/wake"
 )
 
-const pluginVersion = "0.7.7"
+const pluginVersion = "0.7.8"
 
 const busyRetryInterval = 30 * time.Second
+
+// lastResortModel 只在 CPA 模型列表和凭证自带列表都拿不到时使用。
+// CPA 上线新模型后这个名字可能已经不存在，此时刷新会以「模型不可用」失败。
+const lastResortModel = "gpt-5-mini"
 
 type historyEntry struct {
 	At      time.Time     `json:"at"`
@@ -395,7 +399,7 @@ func (r *Runtime) firstListedModel() string {
 	if models := r.availableModels(); len(models) > 0 {
 		return models[0]
 	}
-	return "gpt-5-mini"
+	return lastResortModel
 }
 
 type candidate struct {
@@ -403,7 +407,6 @@ type candidate struct {
 	label    string
 	model    string
 	disabled bool
-	plan     string
 	gptPro   bool
 }
 
@@ -426,7 +429,6 @@ func candidateFromFile(cfg config.Config, file host.AuthFile, fallbackModel stri
 		label:    label,
 		model:    model,
 		disabled: file.Disabled,
-		plan:     planType,
 		gptPro:   plan.IsGPTPro(planType),
 	}, true
 }
@@ -530,7 +532,7 @@ func chooseModel(configured string, available []string, fallback string) string 
 	if trimmed := strings.TrimSpace(fallback); trimmed != "" {
 		return trimmed
 	}
-	return "gpt-5-mini"
+	return lastResortModel
 }
 
 func firstNonBlank(values ...string) string {

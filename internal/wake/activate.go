@@ -20,7 +20,6 @@ type Result struct {
 	Status     string `json:"status"`
 	Success    bool   `json:"success"`
 	LastError  string `json:"last_error,omitempty"`
-	UsedPath   string `json:"used_path,omitempty"`
 	HTTPStatus int    `json:"http_status,omitempty"`
 	Attempts   int    `json:"attempts,omitempty"`
 	Reply      string `json:"reply,omitempty"`
@@ -35,7 +34,7 @@ type Activator struct {
 }
 
 func (a *Activator) Activate(ctx context.Context, authID, label, model string, disabled bool) Result {
-	result := Result{AuthID: authID, Label: label, Model: model, Status: "failed", UsedPath: "cpa"}
+	result := Result{AuthID: authID, Label: label, Model: model, Status: "failed"}
 	if a == nil || a.Host == nil {
 		result.LastError = "缺少宿主依赖，插件未正确加载"
 		return result
@@ -56,7 +55,6 @@ func (a *Activator) Activate(ctx context.Context, authID, label, model string, d
 }
 
 func (a *Activator) wakeCPA(ctx context.Context, authID, model string, previous Result) Result {
-	previous.UsedPath = "cpa"
 	attempts := a.Config.RetryCount + 1
 	if attempts < 1 {
 		attempts = 1
