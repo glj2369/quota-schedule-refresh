@@ -14,7 +14,7 @@ import (
 	"quota-schedule-refresh/internal/wake"
 )
 
-const pluginVersion = "0.4.0"
+const pluginVersion = "0.6.4"
 
 type historyEntry struct {
 	At      time.Time     `json:"at"`
@@ -549,16 +549,18 @@ func (r *Runtime) registrationResult() RegisterResult {
 			Version:          pluginVersion,
 			Author:           "ssgs",
 			GitHubRepository: "https://github.com/glj2369/quota-schedule-refresh",
-			Description:      "Refresh Codex quota windows once a day at a configured local time.",
+			Description:      "每天按设定时刻通过 CPA 接口刷新 Codex 额度窗口。",
 			ConfigFields: []ConfigField{
-				{Name: "schedule_enabled", Type: "boolean", Description: "启用每日定时刷新额度窗口。默认 false。\nEnable the daily timer.", DefaultValue: defaults.ScheduleEnabled},
-				{Name: "daily_at", Type: "string", Description: "每天触发时刻，格式 HH:MM，例如 08:00。\nDaily trigger time HH:MM.", DefaultValue: defaults.DailyAt},
-				{Name: "timezone", Type: "string", Description: "时区，默认 Asia/Shanghai。\nIANA timezone.", DefaultValue: defaults.Timezone},
-				{Name: "model", Type: modelType, Description: "从 CPA /v1/models 读取的 Codex 模型列表。默认第一项。刷新只走 CPA host.model.execute。\nCodex model from CPA /v1/models. Refresh uses CPA only.", EnumValues: models, DefaultValue: listed},
-				{Name: "timeout_seconds", Type: "string", Description: "单次请求超时（秒）。默认 60。\nPer-request timeout in seconds.", DefaultValue: "60"},
-				{Name: "enable_disabled", Type: "boolean", Description: "刷新前自动启用已禁用凭证。默认 true。\nRe-enable disabled credentials before refresh.", DefaultValue: defaults.EnableDisabled},
-				{Name: "max_concurrency", Type: "integer", Description: "同时刷新的账号数上限（worker 池）。\nWorker pool size.", DefaultValue: defaults.MaxConcurrency},
-				{Name: "prompt", Type: "string", Description: "刷新提示词。\nRefresh prompt.", DefaultValue: defaults.Prompt},
+				{Name: "schedule_enabled", Type: "boolean", Description: "启用定时刷新：每天到点自动刷新一次。默认关闭。", DefaultValue: defaults.ScheduleEnabled},
+				{Name: "daily_at", Type: "string", Description: "每天触发时刻，格式 HH:MM，例如 08:00。", DefaultValue: defaults.DailyAt},
+				{Name: "timezone", Type: "string", Description: "时区。默认 Asia/Shanghai。", DefaultValue: defaults.Timezone},
+				{Name: "model", Type: modelType, Description: "刷新使用的 Codex 模型，来自 CPA 模型列表。只走 CPA 接口。", EnumValues: models, DefaultValue: listed},
+				{Name: "timeout_seconds", Type: "string", Description: "单次请求超时（秒）。默认 60。每次重试单独计时。", DefaultValue: "60"},
+				{Name: "enable_disabled", Type: "boolean", Description: "刷新前自动启用已禁用凭证。默认开启。", DefaultValue: defaults.EnableDisabled},
+				{Name: "max_concurrency", Type: "integer", Description: "同时刷新的账号数上限。", DefaultValue: defaults.MaxConcurrency},
+				{Name: "retry_count", Type: "integer", Description: "失败后额外重试次数。默认 2，即最多共请求 3 次。填 0 表示失败不重试。范围 0–10。", DefaultValue: defaults.RetryCount},
+				{Name: "retry_interval_seconds", Type: "integer", Description: "两次重试之间的等待秒数。默认 2。范围 0–30。", DefaultValue: int(defaults.RetryInterval / time.Second)},
+				{Name: "prompt", Type: "string", Description: "刷新提示词。", DefaultValue: defaults.Prompt},
 			},
 		},
 		Capabilities: map[string]bool{"management_api": true, "scheduler": true},
@@ -600,6 +602,8 @@ type statusPayload struct {
 	Model           string        `json:"model"`
 	DefaultModel    string        `json:"default_model"`
 	MaxConcurrency  int           `json:"max_concurrency"`
+	RetryCount      int           `json:"retry_count"`
+	RetryInterval   int           `json:"retry_interval_seconds"`
 	NextScanAt      time.Time     `json:"next_scan_at"`
 	LastScanAt      time.Time     `json:"last_scan_at"`
 	LastMessage     string         `json:"last_message"`
@@ -619,6 +623,8 @@ func (r *Runtime) currentStatus() statusPayload {
 		Model:           r.config.Model,
 		DefaultModel:    listed,
 		MaxConcurrency:  r.config.MaxConcurrency,
+		RetryCount:      r.config.RetryCount,
+		RetryInterval:   int(r.config.RetryInterval / time.Second),
 		NextScanAt:      r.nextScanAt,
 		LastScanAt:      r.lastScanAt,
 		LastMessage:     r.lastMessage,

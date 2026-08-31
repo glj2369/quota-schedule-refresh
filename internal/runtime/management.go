@@ -24,7 +24,7 @@ func (r *Runtime) registerManagement() []byte {
 			{"method": http.MethodPost, "path": managementPrefix + "/run"},
 		},
 		"resources": []map[string]string{
-			{"path": resourceStatusPath, "menu": "Quota Schedule Refresh", "description": "Refresh Codex quota windows on a daily schedule."},
+			{"path": resourceStatusPath, "menu": "额度定时刷新", "description": "每天按设定时刻刷新 Codex 额度窗口。"},
 		},
 	}, nil)
 }

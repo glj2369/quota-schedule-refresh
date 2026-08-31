@@ -22,6 +22,8 @@ type Config struct {
 	Prompt          string
 	EnableDisabled  bool
 	MaxConcurrency  int
+	RetryCount      int
+	RetryInterval   time.Duration
 	DailyHour       int
 	DailyMinute     int
 }
@@ -36,6 +38,8 @@ func Default() Config {
 		Prompt:          "hello",
 		EnableDisabled:  true,
 		MaxConcurrency:  1,
+		RetryCount:      2,
+		RetryInterval:   2 * time.Second,
 		DailyHour:       8,
 		DailyMinute:     0,
 	}
@@ -50,6 +54,8 @@ type rawConfig struct {
 	Prompt          *string `json:"prompt"`
 	EnableDisabled  *bool   `json:"enable_disabled"`
 	MaxConcurrency  *int    `json:"max_concurrency"`
+	RetryCount      any     `json:"retry_count"`
+	RetryInterval   any     `json:"retry_interval_seconds"`
 }
 
 func Parse(data []byte) (Config, error) {
@@ -137,6 +143,23 @@ func (raw rawConfig) apply(cfg Config) (Config, error) {
 	if cfg.MaxConcurrency < 1 {
 		return Config{}, fmt.Errorf("%w: max_concurrency 必须大于等于 1", ErrInvalidConfig)
 	}
+	if raw.RetryCount != nil {
+		parsed, err := parseBoundedInt(raw.RetryCount, 0, 10, "retry_count")
+		if err != nil {
+			return Config{}, err
+		}
+		cfg.RetryCount = parsed
+	}
+	if raw.RetryInterval != nil {
+		parsed, err := parseNonNegativeSeconds(raw.RetryInterval, "retry_interval_seconds")
+		if err != nil {
+			return Config{}, err
+		}
+		if parsed > 30*time.Second {
+			parsed = 30 * time.Second
+		}
+		cfg.RetryInterval = parsed
+	}
 	if raw.TimeoutSeconds != nil {
 		parsed, err := parseTimeoutAny(raw.TimeoutSeconds)
 		if err != nil {
@@ -201,6 +224,71 @@ func parseTimeoutAny(raw any) (time.Duration, error) {
 		return parseTimeoutAny(n)
 	default:
 		return parseTimeout(fmt.Sprint(value))
+	}
+}
+
+func parseBoundedInt(raw any, min, max int, field string) (int, error) {
+	switch value := raw.(type) {
+	case nil:
+		return 0, nil
+	case int:
+		if value < min || value > max {
+			return 0, fmt.Errorf("%w: %s 必须在 %d 到 %d 之间", ErrInvalidConfig, field, min, max)
+		}
+		return value, nil
+	case float64:
+		return parseBoundedInt(int(value), min, max, field)
+	case json.Number:
+		n, err := value.Int64()
+		if err != nil {
+			return 0, fmt.Errorf("%w: %s 无效", ErrInvalidConfig, field)
+		}
+		return parseBoundedInt(int(n), min, max, field)
+	case string:
+		text := strings.TrimSpace(value)
+		if text == "" {
+			return 0, nil
+		}
+		n, err := strconv.Atoi(text)
+		if err != nil {
+			return 0, fmt.Errorf("%w: %s 无效", ErrInvalidConfig, field)
+		}
+		return parseBoundedInt(n, min, max, field)
+	default:
+		return parseBoundedInt(fmt.Sprint(value), min, max, field)
+	}
+}
+
+func parseNonNegativeSeconds(raw any, field string) (time.Duration, error) {
+	switch value := raw.(type) {
+	case nil:
+		return 0, nil
+	case string:
+		text := strings.TrimSpace(value)
+		if text == "" {
+			return 0, nil
+		}
+		n, err := strconv.Atoi(text)
+		if err != nil {
+			return 0, fmt.Errorf("%w: %s 无效", ErrInvalidConfig, field)
+		}
+		if n < 0 {
+			return 0, fmt.Errorf("%w: %s 不能为负数", ErrInvalidConfig, field)
+		}
+		return time.Duration(n) * time.Second, nil
+	case float64:
+		if value < 0 {
+			return 0, fmt.Errorf("%w: %s 不能为负数", ErrInvalidConfig, field)
+		}
+		return time.Duration(value) * time.Second, nil
+	case json.Number:
+		n, err := value.Float64()
+		if err != nil {
+			return 0, fmt.Errorf("%w: %s 无效", ErrInvalidConfig, field)
+		}
+		return parseNonNegativeSeconds(n, field)
+	default:
+		return parseNonNegativeSeconds(fmt.Sprint(value), field)
 	}
 }
 
