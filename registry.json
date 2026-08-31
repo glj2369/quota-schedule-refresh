@@ -4,7 +4,7 @@
     {
       "id": "quota-schedule-refresh",
       "name": "Quota Schedule Refresh",
-      "description": "每天按设定时刻通过 CPA 接口刷新 Codex 额度窗口。",
+      "description": "定时刷新 Codex 额度窗口",
       "author": "ssgs",
       "version": "0.6.4",
       "repository": "https://github.com/glj2369/quota-schedule-refresh",
