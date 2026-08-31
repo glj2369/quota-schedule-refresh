@@ -36,6 +36,11 @@ func TestFriendlyErrorStripsWrappersAndMapsHints(t *testing.T) {
 			raw:  "  host_call_failed:  ",
 			want: "宿主模型执行失败",
 		},
+		{
+			name: "json error body keeps only the message",
+			raw:  `host_call_failed: {&#34;error&#34;:{&#34;message&#34;:&#34;upstream is having a bad day&#34;,&#34;type&#34;:&#34;server_error&#34;}}`,
+			want: "upstream is having a bad day",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

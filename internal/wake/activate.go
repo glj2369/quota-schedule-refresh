@@ -47,7 +47,7 @@ func (a *Activator) Activate(ctx context.Context, authID, label, model string, d
 		cancel()
 		if err != nil {
 			result.LastError = "启用已禁用凭证失败"
-			result.Detail = clipRunes(compactSpace(err.Error()), 600)
+			result.Detail = errorDetail(err.Error())
 			return result
 		}
 	}
@@ -117,7 +117,7 @@ func (a *Activator) executeOnce(ctx context.Context, model string, previous Resu
 		previous.Status = "failed"
 		previous.Success = false
 		previous.LastError = friendlyHostError(err)
-		previous.Detail = clipRunes(compactSpace(err.Error()), 600)
+		previous.Detail = errorDetail(err.Error())
 		previous.Reply = ""
 		return previous
 	}
@@ -131,7 +131,7 @@ func (a *Activator) executeOnce(ctx context.Context, model string, previous Resu
 		} else {
 			previous.LastError = "上游返回非成功状态"
 		}
-		previous.Detail = clipRunes(compactSpace(string(response.Body)), 600)
+		previous.Detail = errorDetail(string(response.Body))
 		previous.Reply = ""
 		return previous
 	}

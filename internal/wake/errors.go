@@ -1,6 +1,8 @@
 package wake
 
 import (
+	"encoding/json"
+	"html"
 	"strings"
 )
 
@@ -34,10 +36,11 @@ var errorHints = []struct {
 
 // friendlyError 生成用于列表展示的短消息，原始文本由 Result.Detail 保留。
 func friendlyError(raw string) string {
-	text := stripErrorWrappers(raw)
+	text := stripErrorWrappers(html.UnescapeString(raw))
 	if text == "" {
 		return "宿主模型执行失败"
 	}
+	// 先在完整文本上匹配：错误码往往藏在 JSON 的 code 字段里，提取 message 会丢掉它。
 	lower := strings.ToLower(text)
 	for _, hint := range errorHints {
 		for _, keyword := range hint.keywords {
@@ -46,7 +49,29 @@ func friendlyError(raw string) string {
 			}
 		}
 	}
+	if message := jsonErrorMessage(text); message != "" {
+		text = message
+	}
 	return clipRunes(compactSpace(stripTrailingContext(text)), 120)
+}
+
+// jsonErrorMessage 从上游返回的错误体里取出人类可读的 message，
+// 避免整段 JSON 直接出现在表格里。
+func jsonErrorMessage(text string) string {
+	start := strings.Index(text, "{")
+	if start < 0 {
+		return ""
+	}
+	var payload any
+	if json.Unmarshal([]byte(text[start:]), &payload) != nil {
+		return ""
+	}
+	return extractReplyText(payload, 0)
+}
+
+// errorDetail 保留完整原文供悬停查看，仅解码 HTML 实体并压缩空白。
+func errorDetail(raw string) string {
+	return clipRunes(compactSpace(html.UnescapeString(raw)), 600)
 }
 
 func friendlyHostError(err error) string {

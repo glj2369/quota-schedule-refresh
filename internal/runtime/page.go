@@ -70,7 +70,7 @@ button:disabled{opacity:.6;cursor:not-allowed}
 <main>
 <section>
 <div id="loginGate">
-  <h1>Quota Schedule Refresh <span class="badge">v0.7.3</span></h1>
+  <h1>Quota Schedule Refresh <span class="badge">v0.7.4</span></h1>
   <p>正在尝试复用 CPA Manager 的登录会话。若自动读取失败，请填写 CPA 管理密钥。</p>
   <label for="managementKey">CPA 管理密钥</label>
   <input id="managementKey" type="password" autocomplete="current-password" placeholder="请输入 CPA 管理密钥">
@@ -78,7 +78,7 @@ button:disabled{opacity:.6;cursor:not-allowed}
   <p class="status" id="loginMsg">正在自动读取会话…</p>
 </div>
 <div id="appShell" hidden>
-  <h1>Quota Schedule Refresh <span class="badge">v0.7.3</span></h1>
+  <h1>Quota Schedule Refresh <span class="badge">v0.7.4</span></h1>
   <p>每天按设定时刻通过 CPA 接口刷新 Codex 额度窗口。也可手动勾选凭证执行。所有设置在「设置」页签内维护。</p>
   <p class="status" id="statusLine">正在读取状态…</p>
   <nav class="tabs">
