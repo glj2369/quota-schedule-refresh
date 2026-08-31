@@ -1,16 +1,16 @@
 # Quota Schedule Refresh
 
-CLIProxyAPI plugin that sends one Codex quota-window refresh request per credential at a configured daily time.
+CLIProxyAPI 插件：每天按设定时刻，对每个 Codex 凭证发送一次额度窗口刷新请求。
 
-Plugin ID / binary / config key: `quota-schedule-refresh`.
+插件 ID / 二进制 / 配置键：`quota-schedule-refresh`。
 
-Author: ssgs. Repository: https://github.com/glj2369/quota-schedule-refresh
+作者：ssgs。仓库：https://github.com/glj2369/quota-schedule-refresh
 
-Refresh always uses CPA `host.model.execute`. There is no direct upstream path.
+刷新只走 CPA 的 `host.model.execute`，不直连上游。
 
-## Config
+## 配置
 
-| Field | Meaning |
+| 字段 | 含义 |
 | --- | --- |
 | `schedule_enabled` | 启用定时刷新 |
 | `daily_at` | 每天触发时刻 `HH:MM`，默认 `08:00` |
@@ -23,9 +23,9 @@ Refresh always uses CPA `host.model.execute`. There is no direct upstream path.
 | `retry_interval_seconds` | 重试间隔秒数，默认 2 |
 | `prompt` | 刷新提示词，默认 `hello` |
 
-The Manager Plus **priority** field is host-owned. This plugin is not a model router or provider, so changing priority does not change refresh behavior.
+Manager Plus 里的 **priority** 由宿主管理。本插件不是模型路由或 Provider，改 priority 不会改变刷新行为。
 
-## Example
+## 示例
 
 ```yaml
 plugins:
@@ -44,9 +44,9 @@ plugins:
       prompt: "hello"
 ```
 
-## Install from plugin store
+## 从插件商店安装
 
-1. Add this registry to `plugins.store-sources`:
+1. 把本仓库的 registry 加到 `plugins.store-sources`：
 
 ```yaml
 plugins:
@@ -54,31 +54,33 @@ plugins:
     - https://raw.githubusercontent.com/glj2369/quota-schedule-refresh/main/registry.json
 ```
 
-2. Install `quota-schedule-refresh` from CPA Manager Plus, or:
+2. 在 CPA Manager Plus 中安装 `quota-schedule-refresh`，或：
 
 ```text
 POST /v0/management/plugin-store/quota-schedule-refresh/install
 ```
 
-Release assets follow the official store layout:
+已安装时请点「更新」，不要点「重新安装」（重新安装会清空自定义配置）。
+
+Release 资源按官方商店布局：
 
 ```text
 quota-schedule-refresh_0.6.4_linux_amd64.zip
 checksums.txt
 ```
 
-## Build
+## 编译
 
 ```bash
 CGO_ENABLED=1 go build -buildmode=c-shared -o quota-schedule-refresh.so .
 rm -f quota-schedule-refresh.h
 ```
 
-Place the binary at `plugins/linux/amd64/quota-schedule-refresh.so`.
+把二进制放到 `plugins/linux/amd64/quota-schedule-refresh.so`。
 
-## Management
+## 管理接口
 
-- Page: `/v0/resource/plugins/quota-schedule-refresh/status`
-- Status: `GET /v0/management/quota-schedule-refresh/status`
-- Credentials: `GET /v0/management/quota-schedule-refresh/auth-files`
-- Run selected: `POST /v0/management/quota-schedule-refresh/run` with `{ "auth_ids": ["..."] }`
+- 页面：`/v0/resource/plugins/quota-schedule-refresh/status`
+- 状态：`GET /v0/management/quota-schedule-refresh/status`
+- 凭证：`GET /v0/management/quota-schedule-refresh/auth-files`
+- 刷新选中凭证：`POST /v0/management/quota-schedule-refresh/run`，body 为 `{ "auth_ids": ["..."] }`
