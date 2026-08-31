@@ -7,7 +7,7 @@ import (
 )
 
 // 宿主逐层包装错误，最终文本形如
-// "host callback host.model.execute: host_call_failed: auth_unavailable: no auth available (providers=codex, model=gpt-5.2-codex)"。
+// "host callback host.model.execute: host_call_failed: auth_unavailable: no auth available"。
 // 这些壳对使用者没有意义，展示前逐层剥掉。
 var errorWrappers = []string{
 	"host callback host.model.execute:",
@@ -18,60 +18,16 @@ var errorWrappers = []string{
 	"execute failed:",
 }
 
-// errorHints 按从具体到宽泛的顺序匹配，命中即用中文短句替换整条消息。
-var errorHints = []struct {
-	keywords []string
-	message  string
-}{
-	{[]string{"auth_unavailable", "no auth available"}, "CPA 没有可用凭证，可能已被禁用或全部限流"},
-	{[]string{"context deadline exceeded", "timed out", "timeout"}, "请求超时"},
-	{[]string{"context canceled", "request canceled"}, "请求被取消"},
-	{[]string{"connection refused", "no such host", "dial tcp"}, "无法连接 CPA 接口"},
-	{[]string{"model_not_found", "model not found", "unknown model"}, "模型不可用"},
-	{[]string{"unauthorized", "invalid_api_key", "invalid token"}, "凭证认证失败，需要重新登录"},
-	{[]string{"too many requests", "rate_limit", "rate limit"}, "触发限流，稍后重试"},
-	{[]string{"insufficient_quota", "quota_exceeded", "usage limit"}, "额度不足"},
-	{[]string{"no auth", "auth not found"}, "找不到可用凭证"},
-}
-
-// friendlyError 生成用于列表展示的短消息，原始文本由 Result.Detail 保留。
+// friendlyError 生成用于列表展示的文本，完整原文由 Result.Detail 保留。
 func friendlyError(raw string) string {
 	text := stripErrorWrappers(html.UnescapeString(raw))
-	if text == "" {
-		return "宿主模型执行失败"
-	}
-	// 先在完整文本上匹配：错误码往往藏在 JSON 的 code 字段里，提取 message 会丢掉它。
-	lower := strings.ToLower(text)
-	for _, hint := range errorHints {
-		for _, keyword := range hint.keywords {
-			if strings.Contains(lower, keyword) {
-				return hint.message
-			}
-		}
-	}
 	if message := jsonErrorMessage(text); message != "" {
 		text = message
 	}
-	return clipRunes(compactSpace(stripTrailingContext(text)), 120)
-}
-
-// jsonErrorMessage 从上游返回的错误体里取出人类可读的 message，
-// 避免整段 JSON 直接出现在表格里。
-func jsonErrorMessage(text string) string {
-	start := strings.Index(text, "{")
-	if start < 0 {
-		return ""
+	if text = compactSpace(text); text == "" {
+		return "宿主模型执行失败"
 	}
-	var payload any
-	if json.Unmarshal([]byte(text[start:]), &payload) != nil {
-		return ""
-	}
-	return extractReplyText(payload, 0)
-}
-
-// errorDetail 保留完整原文供悬停查看，仅解码 HTML 实体并压缩空白。
-func errorDetail(raw string) string {
-	return clipRunes(compactSpace(html.UnescapeString(raw)), 600)
+	return clipRunes(text, 300)
 }
 
 func friendlyHostError(err error) string {
@@ -79,6 +35,11 @@ func friendlyHostError(err error) string {
 		return "宿主模型执行失败"
 	}
 	return friendlyError(err.Error())
+}
+
+// errorDetail 保留完整原文供悬停查看，仅解码 HTML 实体并压缩空白。
+func errorDetail(raw string) string {
+	return clipRunes(compactSpace(html.UnescapeString(raw)), 600)
 }
 
 func stripErrorWrappers(raw string) string {
@@ -95,20 +56,15 @@ func stripErrorWrappers(raw string) string {
 	return text
 }
 
-// stripTrailingContext 去掉结尾的 "(providers=..., model=...)"，
-// 这些字段在表格里已有独立列。
-func stripTrailingContext(text string) string {
-	trimmed := strings.TrimSpace(text)
-	if !strings.HasSuffix(trimmed, ")") {
-		return trimmed
+// jsonErrorMessage 从上游返回的错误体里取出 message，避免整段 JSON 出现在表格里。
+func jsonErrorMessage(text string) string {
+	start := strings.Index(text, "{")
+	if start < 0 {
+		return ""
 	}
-	open := strings.LastIndex(trimmed, "(")
-	if open <= 0 {
-		return trimmed
+	var payload any
+	if json.Unmarshal([]byte(text[start:]), &payload) != nil {
+		return ""
 	}
-	inner := strings.ToLower(trimmed[open+1 : len(trimmed)-1])
-	if !strings.Contains(inner, "=") {
-		return trimmed
-	}
-	return strings.TrimSpace(trimmed[:open])
+	return extractReplyText(payload, 0)
 }

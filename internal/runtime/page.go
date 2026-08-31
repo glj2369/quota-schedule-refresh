@@ -45,9 +45,9 @@ button:disabled{opacity:.6;cursor:not-allowed}
 .pill.fail{background:#fee2e2;color:#b91c1c}
 .pill.skip{background:#eff6ff;color:#1d4ed8}
 .pill.muted{background:#f3f4f6;color:#4b5563}
-.log-table td.reply{max-width:300px;color:#374151}
+.log-table td.reply{color:#374151}
 .log-table td.reply.err{color:#b91c1c}
-.clamp{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.45;white-space:normal;word-break:break-word}
+.clamp{max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mono{font-variant-numeric:tabular-nums;color:#6b7280}
 .form{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px 18px;margin-top:12px}
 .field{min-width:0}
@@ -70,7 +70,7 @@ button:disabled{opacity:.6;cursor:not-allowed}
 <main>
 <section>
 <div id="loginGate">
-  <h1>Quota Schedule Refresh <span class="badge">v0.7.4</span></h1>
+  <h1>Quota Schedule Refresh <span class="badge">v0.7.5</span></h1>
   <p>正在尝试复用 CPA Manager 的登录会话。若自动读取失败，请填写 CPA 管理密钥。</p>
   <label for="managementKey">CPA 管理密钥</label>
   <input id="managementKey" type="password" autocomplete="current-password" placeholder="请输入 CPA 管理密钥">
@@ -78,7 +78,7 @@ button:disabled{opacity:.6;cursor:not-allowed}
   <p class="status" id="loginMsg">正在自动读取会话…</p>
 </div>
 <div id="appShell" hidden>
-  <h1>Quota Schedule Refresh <span class="badge">v0.7.4</span></h1>
+  <h1>Quota Schedule Refresh <span class="badge">v0.7.5</span></h1>
   <p>每天按设定时刻通过 CPA 接口刷新 Codex 额度窗口。也可手动勾选凭证执行。所有设置在「设置」页签内维护。</p>
   <p class="status" id="statusLine">正在读取状态…</p>
   <nav class="tabs">
@@ -285,6 +285,15 @@ function esc(value){
     return ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"})[ch];
   });
 }
+// 宿主把字符串里的引号等字符转成 HTML 实体后才交给我们，展示前解回来。
+function unesc(value){
+  return String(value==null?"":value)
+    .replace(/&#(\d+);/g,function(_,dec){ return String.fromCharCode(parseInt(dec,10)); })
+    .replace(/&#x([0-9a-fA-F]+);/g,function(_,hex){ return String.fromCharCode(parseInt(hex,16)); })
+    .replace(/&quot;/g,"\"").replace(/&apos;/g,"'")
+    .replace(/&lt;/g,"<").replace(/&gt;/g,">")
+    .replace(/&nbsp;/g," ").replace(/&amp;/g,"&");
+}
 function triggerName(value){
   if(value==="schedule") return "定时";
   if(value==="manual") return "手动";
@@ -313,8 +322,8 @@ function renderStatus(data){
     const skipped=row.status==="skipped";
     const ok=!!row.success;
     const failed=!ok&&!skipped;
-    const text=row.reply||row.last_error||"—";
-    const detail=row.detail||row.last_error||text;
+    const text=unesc(row.reply||row.last_error||"—");
+    const detail=unesc(row.detail||row.last_error||"")||text;
     const attempts=row.attempts>1?(" · "+row.attempts+"次"):"";
     const result=skipped?"跳过":(ok?"成功":"失败");
     const pill=skipped?"skip":(ok?"ok":"fail");
