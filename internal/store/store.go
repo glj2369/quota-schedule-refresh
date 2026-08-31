@@ -8,31 +8,87 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 )
 
-const pluginID = "quota-schedule-refresh"
+const (
+	pluginID    = "quota-schedule-refresh"
+	fileName    = "settings.json"
+	envOverride = "QUOTA_SCHEDULE_REFRESH_SETTINGS"
+)
 
-// Store 读写单个 JSON 文件，路径缺省时按宿主约定落在用户配置目录下。
+// Store 读写单个 JSON 文件。写入走主路径，读取时会回退到历史位置，便于换位置后平滑接管。
 type Store struct {
-	mu   sync.Mutex
-	path string
+	mu     sync.Mutex
+	path   string
+	legacy []string
 }
 
 func New(path string) *Store {
+	path = strings.TrimSpace(path)
 	if path == "" {
 		path = DefaultPath()
 	}
-	return &Store{path: path}
+	s := &Store{path: path}
+	if fallback := userConfigPath(); fallback != "" && fallback != path {
+		s.legacy = append(s.legacy, fallback)
+	}
+	return s
 }
 
-// DefaultPath 与同类 CPA 插件保持一致：<用户配置目录>/CLIProxyAPI/<插件 ID>/settings.json。
+// DefaultPath 选择一个能跨容器重建存活的位置。
+// 官方镜像只挂载 plugins、config.yaml、auths 和 logs，用户配置目录属于容器可写层，
+// 因此优先写到 plugins 目录下，裸机部署再回落到用户配置目录。
 func DefaultPath() string {
+	if custom := strings.TrimSpace(os.Getenv(envOverride)); custom != "" {
+		return custom
+	}
+	for _, dir := range pluginDirs() {
+		target := filepath.Join(dir, pluginID)
+		if err := os.MkdirAll(target, 0o700); err != nil {
+			continue
+		}
+		return filepath.Join(target, fileName)
+	}
+	if fallback := userConfigPath(); fallback != "" {
+		return fallback
+	}
+	return filepath.Join(".", pluginID, fileName)
+}
+
+// pluginDirs 只返回已经存在的 plugins 目录，避免在无关工作目录里凭空造目录。
+func pluginDirs() []string {
+	roots := make([]string, 0, 2)
+	if cwd, err := os.Getwd(); err == nil && cwd != "" {
+		roots = append(roots, cwd)
+	}
+	if exe, err := os.Executable(); err == nil && exe != "" {
+		roots = append(roots, filepath.Dir(exe))
+	}
+	dirs := make([]string, 0, len(roots))
+	seen := make(map[string]bool, len(roots))
+	for _, root := range roots {
+		dir := filepath.Join(root, "plugins")
+		if seen[dir] {
+			continue
+		}
+		seen[dir] = true
+		info, err := os.Stat(dir)
+		if err != nil || !info.IsDir() {
+			continue
+		}
+		dirs = append(dirs, dir)
+	}
+	return dirs
+}
+
+func userConfigPath() string {
 	dir, err := os.UserConfigDir()
 	if err != nil || dir == "" {
-		dir = "."
+		return ""
 	}
-	return filepath.Join(dir, "CLIProxyAPI", pluginID, "settings.json")
+	return filepath.Join(dir, "CLIProxyAPI", pluginID, fileName)
 }
 
 func (s *Store) Path() string {
@@ -49,17 +105,34 @@ func (s *Store) Load() (data []byte, found bool, err error) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	raw, err := os.ReadFile(s.path)
+	var firstErr error
+	for _, path := range append([]string{s.path}, s.legacy...) {
+		raw, err := readSettings(path)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		if raw != nil {
+			return raw, true, nil
+		}
+	}
+	return nil, false, firstErr
+}
+
+func readSettings(path string) ([]byte, error) {
+	raw, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, false, nil
+		return nil, nil
 	}
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	if len(raw) == 0 || !json.Valid(raw) {
-		return nil, false, nil
+		return nil, nil
 	}
-	return raw, true, nil
+	return raw, nil
 }
 
 // Save 原子写入：先落临时文件再改名，避免宿主进程读到半个文件。

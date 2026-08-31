@@ -21,7 +21,7 @@ POST /v0/management/plugin-store/quota-schedule-refresh/install
 发布包：
 
 ```text
-quota-schedule-refresh_0.7.0_linux_amd64.zip
+quota-schedule-refresh_0.7.1_linux_amd64.zip
 checksums.txt
 ```
 
@@ -30,8 +30,12 @@ checksums.txt
 设置在插件管理页的「设置」页签内维护，保存后立即生效，并写入插件自己的配置文件：
 
 ```text
-<用户配置目录>/CLIProxyAPI/quota-schedule-refresh/settings.json
+<工作目录>/plugins/quota-schedule-refresh/settings.json
 ```
+
+官方镜像只挂载 `plugins`、`config.yaml`、`auths` 和 `logs`，所以设置写在 `plugins` 目录下，
+容器重建后仍然保留。该目录不存在时回落到 `<用户配置目录>/CLIProxyAPI/quota-schedule-refresh/settings.json`。
+也可以用环境变量 `QUOTA_SCHEDULE_REFRESH_SETTINGS` 指定完整路径。
 
 插件不再向 CPA 声明 `config_fields`，因此 CPA 插件详情页不会生成配置表单。宿主的
 `config_fields` 协议只有 `name`、`type`、`enum_values`、`description` 四项，无处表达默认值，
