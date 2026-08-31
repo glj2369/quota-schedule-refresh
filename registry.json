@@ -6,7 +6,7 @@
       "name": "Quota Schedule Refresh",
       "description": "Refresh Codex quota windows once a day at a configured local time.",
       "author": "ssgs",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "repository": "https://github.com/glj2369/quota-schedule-refresh",
       "homepage": "https://github.com/glj2369/quota-schedule-refresh",
       "license": "MIT",

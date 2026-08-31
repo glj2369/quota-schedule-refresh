@@ -59,7 +59,7 @@ POST /v0/management/plugin-store/quota-schedule-refresh/install
 Release assets follow the official store layout:
 
 ```text
-quota-schedule-refresh_0.3.0_linux_amd64.zip
+quota-schedule-refresh_0.3.1_linux_amd64.zip
 checksums.txt
 ```
 

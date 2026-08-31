@@ -18,7 +18,7 @@ pre{background:#f3f4f6;padding:12px;border-radius:10px;overflow:auto}
 <body>
 <main>
 <section>
-<h1>Quota Schedule Refresh <small>v0.3.0</small></h1>
+<h1>Quota Schedule Refresh <small>v0.3.1</small></h1>
 <p>每天按设定时刻通过 CPA 接口向 Codex 凭证发送一次刷新请求，用于打开新的额度窗口。</p>
 <p id="statusLine">正在读取状态…</p>
 <p><button id="runBtn">立即执行一次</button></p>

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 
 	"quota-schedule-refresh/internal/config"
 	"quota-schedule-refresh/internal/host"
@@ -25,6 +26,7 @@ type Activator struct {
 	Host             host.Client
 	Config           config.Config
 	PinPreferredAuth func(authID string) func()
+	executeMu        sync.Mutex
 }
 
 func (a *Activator) Activate(ctx context.Context, authID, label, model string, disabled bool) Result {
@@ -52,40 +54,45 @@ func (a *Activator) Activate(ctx context.Context, authID, label, model string, d
 
 func (a *Activator) wakeCPA(ctx context.Context, authID, model string, previous Result) Result {
 	previous.UsedPath = "cpa"
-	if a.PinPreferredAuth != nil {
-		if unpin := a.PinPreferredAuth(authID); unpin != nil {
-			defer unpin()
+	return a.withBoostedAuth(ctx, authID, func(callCtx context.Context) Result {
+		if a.PinPreferredAuth != nil {
+			if unpin := a.PinPreferredAuth(authID); unpin != nil {
+				defer unpin()
+			}
 		}
-	}
-	body, _ := json.Marshal(map[string]any{
-		"model":  model,
-		"stream": false,
-		"messages": []map[string]string{{
-			"role":    "user",
-			"content": a.Config.Prompt,
-		}},
-	})
-	response, err := a.Host.ModelExecute(ctx, host.ModelExecuteRequest{
-		Model:   model,
-		Stream:  false,
-		Body:    body,
-		Headers: map[string][]string{"X-Quota-Schedule-Refresh-Auth": {authID}},
-	})
-	if err != nil {
-		previous.Status = "failed"
-		previous.LastError = "CPA接口刷新失败：宿主模型执行失败"
+		prompt := strings.TrimSpace(a.Config.Prompt)
+		if prompt == "" {
+			prompt = "hello"
+		}
+		body, _ := json.Marshal(map[string]any{
+			"model": model,
+			"input": []map[string]string{{
+				"role":    "user",
+				"content": prompt,
+			}},
+			"store": false,
+		})
+		response, err := a.Host.ModelExecute(callCtx, host.ModelExecuteRequest{
+			Model:  model,
+			Stream: false,
+			Body:   body,
+		})
+		if err != nil {
+			previous.Status = "failed"
+			previous.LastError = "CPA接口刷新失败：" + shortHostError(err)
+			return previous
+		}
+		previous.HTTPStatus = response.StatusCode
+		if !host.IsHTTPSuccess(response.StatusCode) {
+			previous.Status = "failed"
+			previous.LastError = fmt.Sprintf("CPA接口刷新失败：上游返回非成功状态（HTTP %d）", response.StatusCode)
+			return previous
+		}
+		previous.Status = "success"
+		previous.Success = true
+		previous.LastError = ""
 		return previous
-	}
-	previous.HTTPStatus = response.StatusCode
-	if !host.IsHTTPSuccess(response.StatusCode) {
-		previous.Status = "failed"
-		previous.LastError = fmt.Sprintf("CPA接口刷新失败：上游返回非成功状态（HTTP %d）", response.StatusCode)
-		return previous
-	}
-	previous.Status = "success"
-	previous.Success = true
-	previous.LastError = ""
-	return previous
+	})
 }
 
 func matchAuth(file host.AuthFile, authID string) bool {

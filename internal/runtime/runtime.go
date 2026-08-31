@@ -14,7 +14,7 @@ import (
 	"quota-schedule-refresh/internal/wake"
 )
 
-const pluginVersion = "0.3.0"
+const pluginVersion = "0.3.1"
 
 type Runtime struct {
 	mu             sync.Mutex
