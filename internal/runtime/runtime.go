@@ -11,10 +11,11 @@ import (
 
 	"quota-schedule-refresh/internal/config"
 	"quota-schedule-refresh/internal/host"
+	"quota-schedule-refresh/internal/plan"
 	"quota-schedule-refresh/internal/wake"
 )
 
-const pluginVersion = "0.6.4"
+const pluginVersion = "0.6.5"
 
 type historyEntry struct {
 	At      time.Time     `json:"at"`
@@ -196,27 +197,38 @@ func (r *Runtime) activateAll(ctx context.Context, cfg config.Config, authIDs []
 	}
 	fallbackModel := r.firstListedModel()
 	targets := make([]candidate, 0, len(files))
+	skipped := make([]wake.Result, 0)
+	wanted := selectedAuthSet(authIDs)
 	for _, file := range files {
 		enriched := r.enrichAuthFile(ctx, file)
 		target, included := candidateFromFile(cfg, enriched, fallbackModel)
-		if included {
-			targets = append(targets, target)
+		if !included {
+			continue
 		}
+		if len(wanted) > 0 && !wanted[target.authID] && !wanted[target.label] {
+			continue
+		}
+		if cfg.SkipGPTPro && target.gptPro {
+			skipped = append(skipped, wake.Result{
+				AuthID:  target.authID,
+				Label:   target.label,
+				Model:   target.model,
+				Status:  "skipped",
+				Success: false,
+				Reply:   "GPT Pro，已跳过",
+			})
+			continue
+		}
+		targets = append(targets, target)
 	}
 	if len(targets) == 0 {
+		if len(skipped) > 0 {
+			return skipped, fmt.Sprintf("成功 0，失败 0，跳过 %d", len(skipped))
+		}
+		if len(wanted) > 0 {
+			return nil, "没有匹配的 Codex 凭证"
+		}
 		return nil, "没有可唤醒的 Codex 凭证"
-	}
-	if wanted := selectedAuthSet(authIDs); len(wanted) > 0 {
-		filtered := make([]candidate, 0, len(wanted))
-		for _, target := range targets {
-			if wanted[target.authID] || wanted[target.label] {
-				filtered = append(filtered, target)
-			}
-		}
-		targets = filtered
-	}
-	if len(targets) == 0 {
-		return nil, "没有匹配的 Codex 凭证"
 	}
 	workers := cfg.MaxConcurrency
 	if workers < 1 {
@@ -260,7 +272,7 @@ func (r *Runtime) activateAll(ctx context.Context, cfg config.Config, authIDs []
 			fail++
 		}
 	}
-	return collected, fmt.Sprintf("成功 %d，失败 %d，跳过 %d", ok, fail, skip)
+	return append(skipped, collected...), fmt.Sprintf("成功 %d，失败 %d，跳过 %d", ok, fail, skip+len(skipped))
 }
 
 func (r *Runtime) enrichAuthFile(ctx context.Context, file host.AuthFile) host.AuthFile {
@@ -362,6 +374,8 @@ type candidate struct {
 	label    string
 	model    string
 	disabled bool
+	plan     string
+	gptPro   bool
 }
 
 func candidateFromFile(cfg config.Config, file host.AuthFile, fallbackModel string) (candidate, bool) {
@@ -377,7 +391,15 @@ func candidateFromFile(cfg config.Config, file host.AuthFile, fallbackModel stri
 	}
 	model := chooseModel(cfg.Model, collectModels(file), fallbackModel)
 	label := firstNonBlank(file.Account, file.Email, file.Name, authID)
-	return candidate{authID: authID, label: label, model: model, disabled: file.Disabled}, true
+	planType := plan.FromAuth([]string{file.Name, file.ID, file.AuthIndex}, file.Data, file.Metadata, file.Attributes)
+	return candidate{
+		authID:   authID,
+		label:    label,
+		model:    model,
+		disabled: file.Disabled,
+		plan:     planType,
+		gptPro:   plan.IsGPTPro(planType),
+	}, true
 }
 
 func isCodex(file host.AuthFile) bool {
@@ -557,6 +579,7 @@ func (r *Runtime) registrationResult() RegisterResult {
 				{Name: "model", Type: modelType, Description: "刷新使用的 Codex 模型，来自 CPA 模型列表。只走 CPA 接口。", EnumValues: models, DefaultValue: listed},
 				{Name: "timeout_seconds", Type: "string", Description: "单次请求超时（秒）。默认 60。每次重试单独计时。", DefaultValue: "60"},
 				{Name: "enable_disabled", Type: "boolean", Description: "刷新前自动启用已禁用凭证。默认开启。", DefaultValue: defaults.EnableDisabled},
+				{Name: "skip_gpt_pro", Type: "boolean", Description: "刷新时跳过 GPT Pro 凭证。按文件名套餐后缀和 token 中的套餐类型识别。", DefaultValue: defaults.SkipGPTPro},
 				{Name: "max_concurrency", Type: "integer", Description: "同时刷新的账号数上限。", DefaultValue: defaults.MaxConcurrency},
 				{Name: "retry_count", Type: "integer", Description: "失败后额外重试次数。默认 2，即最多共请求 3 次。填 0 表示失败不重试。范围 0–10。", DefaultValue: defaults.RetryCount},
 				{Name: "retry_interval_seconds", Type: "integer", Description: "两次重试之间的等待秒数。默认 2。范围 0–30。", DefaultValue: int(defaults.RetryInterval / time.Second)},
@@ -604,6 +627,7 @@ type statusPayload struct {
 	MaxConcurrency  int           `json:"max_concurrency"`
 	RetryCount      int           `json:"retry_count"`
 	RetryInterval   int           `json:"retry_interval_seconds"`
+	SkipGPTPro      bool          `json:"skip_gpt_pro"`
 	NextScanAt      time.Time     `json:"next_scan_at"`
 	LastScanAt      time.Time     `json:"last_scan_at"`
 	LastMessage     string         `json:"last_message"`
@@ -625,6 +649,7 @@ func (r *Runtime) currentStatus() statusPayload {
 		MaxConcurrency:  r.config.MaxConcurrency,
 		RetryCount:      r.config.RetryCount,
 		RetryInterval:   int(r.config.RetryInterval / time.Second),
+		SkipGPTPro:      r.config.SkipGPTPro,
 		NextScanAt:      r.nextScanAt,
 		LastScanAt:      r.lastScanAt,
 		LastMessage:     r.lastMessage,
@@ -637,6 +662,8 @@ func (r *Runtime) currentStatus() statusPayload {
 type credentialPayload struct {
 	AuthID   string `json:"auth_id"`
 	Label    string `json:"label"`
+	Plan     string `json:"plan,omitempty"`
+	GPTPro   bool   `json:"gpt_pro,omitempty"`
 	Disabled bool   `json:"disabled"`
 }
 
@@ -659,7 +686,14 @@ func (r *Runtime) listCredentials(ctx context.Context) []credentialPayload {
 			continue
 		}
 		label := firstNonBlank(enriched.Account, enriched.Email, enriched.Name, authID)
-		out = append(out, credentialPayload{AuthID: authID, Label: label, Disabled: enriched.Disabled})
+		planType := plan.FromAuth([]string{enriched.Name, enriched.ID, enriched.AuthIndex}, enriched.Data, enriched.Metadata, enriched.Attributes)
+		out = append(out, credentialPayload{
+			AuthID:   authID,
+			Label:    label,
+			Plan:     planType,
+			GPTPro:   plan.IsGPTPro(planType),
+			Disabled: enriched.Disabled,
+		})
 	}
 	return out
 }

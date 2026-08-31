@@ -6,7 +6,7 @@
       "name": "Quota Schedule Refresh",
       "description": "定时刷新 Codex 额度窗口",
       "author": "ssgs",
-      "version": "0.6.4",
+      "version": "0.6.5",
       "repository": "https://github.com/glj2369/quota-schedule-refresh",
       "homepage": "https://github.com/glj2369/quota-schedule-refresh",
       "license": "MIT",

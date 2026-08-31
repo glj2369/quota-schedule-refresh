@@ -21,6 +21,7 @@ type Config struct {
 	Timeout         time.Duration
 	Prompt          string
 	EnableDisabled  bool
+	SkipGPTPro      bool
 	MaxConcurrency  int
 	RetryCount      int
 	RetryInterval   time.Duration
@@ -37,6 +38,7 @@ func Default() Config {
 		Timeout:         time.Minute,
 		Prompt:          "hello",
 		EnableDisabled:  true,
+		SkipGPTPro:      false,
 		MaxConcurrency:  1,
 		RetryCount:      2,
 		RetryInterval:   2 * time.Second,
@@ -53,6 +55,7 @@ type rawConfig struct {
 	TimeoutSeconds any     `json:"timeout_seconds"`
 	Prompt          *string `json:"prompt"`
 	EnableDisabled  *bool   `json:"enable_disabled"`
+	SkipGPTPro      *bool   `json:"skip_gpt_pro"`
 	MaxConcurrency  *int    `json:"max_concurrency"`
 	RetryCount      any     `json:"retry_count"`
 	RetryInterval   any     `json:"retry_interval_seconds"`
@@ -136,6 +139,9 @@ func (raw rawConfig) apply(cfg Config) (Config, error) {
 	}
 	if raw.EnableDisabled != nil {
 		cfg.EnableDisabled = *raw.EnableDisabled
+	}
+	if raw.SkipGPTPro != nil {
+		cfg.SkipGPTPro = *raw.SkipGPTPro
 	}
 	if raw.MaxConcurrency != nil {
 		cfg.MaxConcurrency = *raw.MaxConcurrency

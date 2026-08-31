@@ -21,7 +21,7 @@ POST /v0/management/plugin-store/quota-schedule-refresh/install
 发布包：
 
 ```text
-quota-schedule-refresh_0.6.4_linux_amd64.zip
+quota-schedule-refresh_0.6.5_linux_amd64.zip
 checksums.txt
 ```
 
@@ -35,6 +35,7 @@ checksums.txt
 | `model` | Codex 模型，空则使用列表第一项 |
 | `timeout_seconds` | 单次请求超时（秒），默认 `60` |
 | `enable_disabled` | 刷新前启用已禁用的凭证 |
+| `skip_gpt_pro` | 刷新时跳过 GPT Pro 凭证，默认关闭 |
 | `max_concurrency` | 并发上限 |
 | `retry_count` | 失败重试次数，默认 `2` |
 | `retry_interval_seconds` | 重试间隔（秒），默认 `2` |
@@ -51,6 +52,7 @@ plugins:
       model: "gpt-5.6-sol"
       timeout_seconds: "60"
       enable_disabled: true
+      skip_gpt_pro: false
       max_concurrency: 2
       retry_count: 2
       retry_interval_seconds: 2

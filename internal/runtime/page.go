@@ -43,6 +43,7 @@ button:disabled{opacity:.6;cursor:not-allowed}
 .pill{display:inline-flex;align-items:center;border-radius:999px;padding:2px 8px;font-size:12px;font-weight:700}
 .pill.ok{background:#ecfdf5;color:#047857}
 .pill.fail{background:#fee2e2;color:#b91c1c}
+.pill.skip{background:#eff6ff;color:#1d4ed8}
 .pill.muted{background:#f3f4f6;color:#4b5563}
 .reply{max-width:260px;color:#374151;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.45;white-space:normal;word-break:break-word}
 .mono{font-variant-numeric:tabular-nums;color:#6b7280}
@@ -55,7 +56,7 @@ button:disabled{opacity:.6;cursor:not-allowed}
 <main>
 <section>
 <div id="loginGate">
-  <h1>Quota Schedule Refresh <span class="badge">v0.6.4</span></h1>
+  <h1>Quota Schedule Refresh <span class="badge">v0.6.5</span></h1>
   <p>正在尝试复用 CPA Manager 的登录会话。若自动读取失败，请填写 CPA 管理密钥。</p>
   <label for="managementKey">CPA 管理密钥</label>
   <input id="managementKey" type="password" autocomplete="current-password" placeholder="请输入 CPA 管理密钥">
@@ -63,7 +64,7 @@ button:disabled{opacity:.6;cursor:not-allowed}
   <p class="status" id="loginMsg">正在自动读取会话…</p>
 </div>
 <div id="appShell" hidden>
-  <h1>Quota Schedule Refresh <span class="badge">v0.6.4</span></h1>
+  <h1>Quota Schedule Refresh <span class="badge">v0.6.5</span></h1>
   <p>每天按设定时刻通过 CPA 接口刷新 Codex 额度窗口。也可手动勾选凭证执行。</p>
   <p class="status" id="statusLine">正在读取状态…</p>
   <nav class="tabs">
@@ -72,7 +73,7 @@ button:disabled{opacity:.6;cursor:not-allowed}
   </nav>
   <div id="panel-run" class="tab-panel active">
     <label>选择要刷新的凭证</label>
-    <p class="hint">列表来自 CPA 凭证管理（host.auth.list），只显示 Codex 账号。</p>
+    <p class="hint">只显示 Codex 账号。开启跳过 GPT Pro 后，Pro 凭证不会被刷新。</p>
     <div id="credentialList" class="list"></div>
     <div class="actions">
       <button type="button" class="secondary" id="reloadBtn">刷新列表</button>
@@ -97,6 +98,7 @@ const AUTH_STORE="cli-proxy-auth";
 const ENC_PREFIX="enc::v1::";
 const SECRET_SALT="cli-proxy-api-webui::secure-storage";
 let activeKey="";
+let skipGPTPro=false;
 function stores(){
   const out=[];
   try{out.push(localStorage);}catch(e){}
@@ -212,9 +214,10 @@ function triggerName(value){
   return value||"-";
 }
 function renderStatus(data){
+  skipGPTPro=!!data.skip_gpt_pro;
   const model=data.model||data.default_model||"-";
   document.getElementById("statusLine").textContent=
-    (data.schedule_enabled?"定时已开":"定时未开")+" · "+(data.daily_at||"-")+" · "+model+" · 并发 "+(data.max_concurrency||1)+" · 重试 "+(data.retry_count||0);
+    (data.schedule_enabled?"定时已开":"定时未开")+" · "+(data.daily_at||"-")+" · "+model+" · 并发 "+(data.max_concurrency||1)+" · 重试 "+(data.retry_count||0)+" · "+(skipGPTPro?"跳过 Pro":"含 Pro");
   const records=document.getElementById("records");
   const history=data.history||[];
   const rows=[];
@@ -230,14 +233,17 @@ function renderStatus(data){
   }
   const body=rows.map(function(entry){
     const row=entry.row||{};
+    const skipped=row.status==="skipped";
     const ok=!!row.success;
     const reply=row.reply||row.last_error||"—";
     const attempts=row.attempts>1?(" · "+row.attempts+"次"):"";
-    return "<tr class=\""+(ok?"":"fail")+"\">"+
+    const result=skipped?"跳过":(ok?"成功":"失败");
+    const pill=skipped?"skip":(ok?"ok":"fail");
+    return "<tr class=\""+(ok||skipped?"":"fail")+"\">"+
       "<td class=\"mono\">"+esc(fmtTime(entry.at))+"</td>"+
       "<td><span class=\"pill muted\">"+esc(triggerName(entry.trigger))+"</span></td>"+
       "<td>"+esc(row.label||row.auth_id||"-")+"</td>"+
-      "<td><span class=\"pill "+(ok?"ok":"fail")+"\">"+(ok?"成功":"失败")+attempts+"</span></td>"+
+      "<td><span class=\"pill "+pill+"\">"+result+attempts+"</span></td>"+
       "<td class=\"mono\">"+esc(row.http_status||"-")+"</td>"+
       "<td class=\"reply\" title=\""+esc(reply)+"\">"+esc(reply)+"</td>"+
       "</tr>";
@@ -257,8 +263,10 @@ async function loadFiles(){
   }
   box.innerHTML=files.map(function(file){
     const label=file.label||file.auth_id;
-    const extra=file.disabled?"（已禁用）":"";
-    return '<label class="item'+(file.disabled?" disabled":"")+'"><input type="checkbox" value="'+file.auth_id+'" checked> '+label+extra+'</label>';
+    const pro=!!file.gpt_pro;
+    const skip=skipGPTPro&&pro;
+    const extra=(file.disabled?"（已禁用）":"")+(pro?"（Pro）":(file.plan?"（"+file.plan+"）":""));
+    return '<label class="item'+(file.disabled||skip?" disabled":"")+'"><input type="checkbox" value="'+file.auth_id+'"'+(skip?"":" checked")+(skip?" disabled":"")+'> '+label+extra+'</label>';
   }).join("");
 }
 async function loadAll(){
