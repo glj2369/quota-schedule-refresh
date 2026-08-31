@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -18,16 +19,84 @@ import (
 func (r *Runtime) availableModels() []string {
 	if fresh := r.cpaModels(); len(fresh) > 0 {
 		r.rememberModels(fresh)
-		return fresh
+		return sortedModels(fresh)
 	}
 	if cached := r.cachedModels(); len(cached) > 0 {
-		return cached
+		return sortedModels(cached)
 	}
 	if listed := r.listedModels(); len(listed) > 0 {
 		r.rememberModels(listed)
-		return listed
+		return sortedModels(listed)
 	}
 	return nil
+}
+
+// sortedModels 固定下拉列表的顺序：CPA 的 /v1/models 每次返回的次序都不同。
+// gpt 系列排在前面，同系列内按版本号数值升序，这样默认取第一个也是可用的对话模型。
+func sortedModels(models []string) []string {
+	out := append([]string(nil), models...)
+	sort.SliceStable(out, func(i, j int) bool {
+		left, right := strings.ToLower(out[i]), strings.ToLower(out[j])
+		if gi, gj := modelGroup(left), modelGroup(right); gi != gj {
+			return gi < gj
+		}
+		return naturalLess(left, right)
+	})
+	return out
+}
+
+func modelGroup(lower string) int {
+	if strings.HasPrefix(lower, "gpt-") {
+		return 0
+	}
+	return 1
+}
+
+// naturalLess 按段比较，数字段按数值，避免 gpt-5.10 排到 gpt-5.4 前面。
+func naturalLess(a, b string) bool {
+	i, j := 0, 0
+	for i < len(a) && j < len(b) {
+		if isDigit(a[i]) && isDigit(b[j]) {
+			na, ni := readDigits(a, i)
+			nb, nj := readDigits(b, j)
+			if na != nb {
+				return lessNumeric(na, nb)
+			}
+			i, j = ni, nj
+			continue
+		}
+		if a[i] != b[j] {
+			return a[i] < b[j]
+		}
+		i++
+		j++
+	}
+	return len(a)-i < len(b)-j
+}
+
+// readDigits 返回去掉前导零的数字串及其结束位置。
+func readDigits(text string, start int) (string, int) {
+	end := start
+	for end < len(text) && isDigit(text[end]) {
+		end++
+	}
+	digits := strings.TrimLeft(text[start:end], "0")
+	if digits == "" {
+		digits = "0"
+	}
+	return digits, end
+}
+
+// lessNumeric 比较已去前导零的数字串，按位数再按字典序，长数字也不会溢出。
+func lessNumeric(a, b string) bool {
+	if len(a) != len(b) {
+		return len(a) < len(b)
+	}
+	return a < b
+}
+
+func isDigit(c byte) bool {
+	return c >= '0' && c <= '9'
 }
 
 func (r *Runtime) rememberModels(models []string) {
