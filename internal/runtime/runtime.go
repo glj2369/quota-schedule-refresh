@@ -12,10 +12,11 @@ import (
 	"quota-schedule-refresh/internal/config"
 	"quota-schedule-refresh/internal/host"
 	"quota-schedule-refresh/internal/plan"
+	"quota-schedule-refresh/internal/store"
 	"quota-schedule-refresh/internal/wake"
 )
 
-const pluginVersion = "0.6.7"
+const pluginVersion = "0.7.0"
 
 const busyRetryInterval = 30 * time.Second
 
@@ -29,6 +30,8 @@ type historyEntry struct {
 type Runtime struct {
 	mu            sync.Mutex
 	host          host.Client
+	settings      *store.Store
+	baseConfig    config.Config
 	config        config.Config
 	now           func() time.Time
 	cancel        context.CancelFunc
@@ -45,7 +48,13 @@ type Runtime struct {
 }
 
 func New(hostClient host.Client) *Runtime {
-	return &Runtime{host: hostClient, config: config.Default(), now: time.Now}
+	return &Runtime{
+		host:       hostClient,
+		settings:   store.New(""),
+		baseConfig: config.Default(),
+		config:     config.Default(),
+		now:        time.Now,
+	}
 }
 
 func (r *Runtime) Handle(ctx context.Context, method string, request []byte) []byte {
@@ -72,22 +81,37 @@ func (r *Runtime) register(raw []byte) []byte {
 	if err != nil {
 		return failure(err)
 	}
-	cfg, err := config.Parse([]byte(yamlText))
+	base, err := config.Parse([]byte(yamlText))
 	if err != nil {
 		return failure(err)
 	}
-	if err := r.replaceConfig(cfg); err != nil {
+	if err := r.replaceConfig(base, r.mergeStoredSettings(base)); err != nil {
 		return failure(err)
 	}
 	return envelopeResult(r.registrationResult(), nil)
 }
 
-func (r *Runtime) replaceConfig(cfg config.Config) error {
+// mergeStoredSettings 把插件页面保存过的设置叠加到宿主配置之上。
+// 私有文件损坏或不可读时退回宿主配置，不让插件注册失败。
+func (r *Runtime) mergeStoredSettings(base config.Config) config.Config {
+	data, found, err := r.settings.Load()
+	if err != nil || !found {
+		return base
+	}
+	merged, err := config.ApplyOver(base, data)
+	if err != nil {
+		return base
+	}
+	return merged
+}
+
+func (r *Runtime) replaceConfig(base, cfg config.Config) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.shutdown {
 		return ErrShutdown
 	}
+	r.baseConfig = base
 	r.config = cfg
 	key := fmt.Sprintf("%t|%s|%s", cfg.ScheduleEnabled, cfg.DailyAt, cfg.Timezone)
 	if !cfg.ScheduleEnabled {
@@ -534,21 +558,16 @@ func sleepCtx(ctx context.Context, d time.Duration) bool {
 	}
 }
 
-type ConfigField struct {
-	Name         string   `json:"Name"`
-	Type         string   `json:"Type"`
-	Description  string   `json:"Description"`
-	EnumValues   []string `json:"EnumValues,omitempty"`
-	DefaultValue any      `json:"DefaultValue"`
-}
-
+// Metadata 故意不声明 ConfigFields。宿主的 config_fields 协议只有
+// name/type/enum_values/description 四项，无处表达默认值，导致自动生成的表单
+// 把留空项渲染成空值、布尔项一律渲染成关闭，与插件实际生效的默认值不一致。
+// 设置改由插件自己的页面维护，见 handleSettings。
 type Metadata struct {
-	Name             string        `json:"Name"`
-	Version          string        `json:"Version"`
-	Author           string        `json:"Author"`
-	GitHubRepository string        `json:"GitHubRepository"`
-	Description      string        `json:"Description"`
-	ConfigFields     []ConfigField `json:"ConfigFields,omitempty"`
+	Name             string `json:"Name"`
+	Version          string `json:"Version"`
+	Author           string `json:"Author"`
+	GitHubRepository string `json:"GitHubRepository"`
+	Description      string `json:"Description"`
 }
 
 type RegisterResult struct {
@@ -558,19 +577,6 @@ type RegisterResult struct {
 }
 
 func (r *Runtime) registrationResult() RegisterResult {
-	defaults := config.Default()
-	models := r.cpaModels()
-	if len(models) == 0 {
-		models = r.listedModels()
-	}
-	listed := ""
-	if len(models) > 0 {
-		listed = models[0]
-	}
-	modelType := "string"
-	if len(models) > 0 {
-		modelType = "enum"
-	}
 	return RegisterResult{
 		SchemaVersion: 1,
 		Metadata: Metadata{
@@ -578,20 +584,7 @@ func (r *Runtime) registrationResult() RegisterResult {
 			Version:          pluginVersion,
 			Author:           "glj",
 			GitHubRepository: "https://github.com/glj2369/quota-schedule-refresh",
-			Description:      "每天按设定时刻通过 CPA 接口刷新 Codex 额度窗口。",
-			ConfigFields: []ConfigField{
-				{Name: "schedule_enabled", Type: "boolean", Description: "启用定时刷新：每天到点自动刷新一次。默认关闭。", DefaultValue: defaults.ScheduleEnabled},
-				{Name: "daily_at", Type: "string", Description: "每天触发时刻，格式 HH:MM，例如 08:00。", DefaultValue: defaults.DailyAt},
-				{Name: "timezone", Type: "string", Description: "时区。默认 Asia/Shanghai。", DefaultValue: defaults.Timezone},
-				{Name: "model", Type: modelType, Description: "刷新使用的 Codex 模型，来自 CPA 模型列表。只走 CPA 接口。", EnumValues: models, DefaultValue: listed},
-				{Name: "timeout_seconds", Type: "string", Description: "单次请求超时（秒）。默认 60。每次重试单独计时。", DefaultValue: "60"},
-				{Name: "enable_disabled", Type: "boolean", Description: "刷新前自动启用已禁用凭证。默认开启。", DefaultValue: defaults.EnableDisabled},
-				{Name: "skip_gpt_pro", Type: "boolean", Description: "刷新时跳过 GPT Pro 凭证。按文件名套餐后缀和 token 中的套餐类型识别。", DefaultValue: defaults.SkipGPTPro},
-				{Name: "max_concurrency", Type: "integer", Description: "同时刷新的账号数上限。", DefaultValue: defaults.MaxConcurrency},
-				{Name: "retry_count", Type: "integer", Description: "失败后额外重试次数。默认 2，即最多共请求 3 次。填 0 表示失败不重试。范围 0–10。", DefaultValue: defaults.RetryCount},
-				{Name: "retry_interval_seconds", Type: "integer", Description: "两次重试之间的等待秒数。默认 2。范围 0–30。", DefaultValue: int(defaults.RetryInterval / time.Second)},
-				{Name: "prompt", Type: "string", Description: "刷新提示词。", DefaultValue: defaults.Prompt},
-			},
+			Description:      "每天按设定时刻通过 CPA 接口刷新 Codex 额度窗口。设置在插件页面内维护。",
 		},
 		Capabilities: map[string]bool{"management_api": true, "scheduler": true},
 	}

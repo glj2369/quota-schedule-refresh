@@ -62,11 +62,73 @@ type rawConfig struct {
 }
 
 func Parse(data []byte) (Config, error) {
+	return ApplyOver(Default(), data)
+}
+
+// ApplyOver 在基线配置上叠加一层覆盖，供插件私有设置覆盖宿主 config.yaml。
+func ApplyOver(base Config, data []byte) (Config, error) {
 	raw, err := decodeRaw(data)
 	if err != nil {
 		return Config{}, err
 	}
-	return raw.apply(Default())
+	return raw.apply(base)
+}
+
+// Settings 是设置页面与私有配置文件共用的字段集，键名与 config.yaml 保持一致。
+type Settings struct {
+	ScheduleEnabled bool   `json:"schedule_enabled"`
+	DailyAt         string `json:"daily_at"`
+	Timezone        string `json:"timezone"`
+	Model           string `json:"model"`
+	TimeoutSeconds  int    `json:"timeout_seconds"`
+	EnableDisabled  bool   `json:"enable_disabled"`
+	SkipGPTPro      bool   `json:"skip_gpt_pro"`
+	MaxConcurrency  int    `json:"max_concurrency"`
+	RetryCount      int    `json:"retry_count"`
+	RetryInterval   int    `json:"retry_interval_seconds"`
+	Prompt          string `json:"prompt"`
+}
+
+func ToSettings(cfg Config) Settings {
+	return Settings{
+		ScheduleEnabled: cfg.ScheduleEnabled,
+		DailyAt:         cfg.DailyAt,
+		Timezone:        cfg.Timezone,
+		Model:           cfg.Model,
+		TimeoutSeconds:  int(cfg.Timeout / time.Second),
+		EnableDisabled:  cfg.EnableDisabled,
+		SkipGPTPro:      cfg.SkipGPTPro,
+		MaxConcurrency:  cfg.MaxConcurrency,
+		RetryCount:      cfg.RetryCount,
+		RetryInterval:   int(cfg.RetryInterval / time.Second),
+		Prompt:          cfg.Prompt,
+	}
+}
+
+// Apply 校验设置并生成配置，未填写的项沿用 base。
+// retry_count 与 retry_interval_seconds 的 0 是有效值，不做留空回填。
+func (s Settings) Apply(base Config) (Config, error) {
+	if s.MaxConcurrency < 1 {
+		s.MaxConcurrency = base.MaxConcurrency
+	}
+	if s.TimeoutSeconds <= 0 {
+		s.TimeoutSeconds = int(base.Timeout / time.Second)
+	}
+	if strings.TrimSpace(s.DailyAt) == "" {
+		s.DailyAt = base.DailyAt
+	}
+	if strings.TrimSpace(s.Timezone) == "" {
+		s.Timezone = base.Timezone
+	}
+	data, err := json.Marshal(s)
+	if err != nil {
+		return Config{}, fmt.Errorf("%w: 设置序列化失败", ErrInvalidConfig)
+	}
+	return ApplyOver(base, data)
+}
+
+func (s Settings) Encode() ([]byte, error) {
+	return json.MarshalIndent(s, "", "  ")
 }
 
 func decodeRaw(data []byte) (rawConfig, error) {

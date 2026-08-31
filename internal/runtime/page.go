@@ -47,6 +47,18 @@ button:disabled{opacity:.6;cursor:not-allowed}
 .pill.muted{background:#f3f4f6;color:#4b5563}
 .reply{max-width:260px;color:#374151;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.45;white-space:normal;word-break:break-word}
 .mono{font-variant-numeric:tabular-nums;color:#6b7280}
+.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px 18px;margin-top:12px}
+.field{min-width:0}
+.field label{margin:0 0 6px;font-size:13px}
+.field input[type=text],.field input[type=number],.field select{width:100%;box-sizing:border-box;border:1px solid #d1d5db;border-radius:10px;padding:10px;font:inherit;background:#fff;color:inherit}
+.field .hint{margin-top:6px;font-size:12px}
+.toggle{display:flex;align-items:center;gap:10px;border:1px solid #d1d5db;border-radius:10px;padding:11px 12px;cursor:pointer}
+.toggle:hover{background:#f9fafb}
+.toggle input{width:auto;margin:0}
+.toggle span{font-size:13px;font-weight:600;color:#374151}
+.wide{grid-column:1/-1}
+.ok-text{color:#047857}
+.err-text{color:#b91c1c}
 .empty{color:#9ca3af;padding:28px 16px;text-align:center}
 .count{margin-left:6px;font-size:12px;font-weight:700;color:#1d4ed8}
 .tab.active .count{color:#bfdbfe}
@@ -56,7 +68,7 @@ button:disabled{opacity:.6;cursor:not-allowed}
 <main>
 <section>
 <div id="loginGate">
-  <h1>Quota Schedule Refresh <span class="badge">v0.6.7</span></h1>
+  <h1>Quota Schedule Refresh <span class="badge">v0.7.0</span></h1>
   <p>正在尝试复用 CPA Manager 的登录会话。若自动读取失败，请填写 CPA 管理密钥。</p>
   <label for="managementKey">CPA 管理密钥</label>
   <input id="managementKey" type="password" autocomplete="current-password" placeholder="请输入 CPA 管理密钥">
@@ -64,11 +76,12 @@ button:disabled{opacity:.6;cursor:not-allowed}
   <p class="status" id="loginMsg">正在自动读取会话…</p>
 </div>
 <div id="appShell" hidden>
-  <h1>Quota Schedule Refresh <span class="badge">v0.6.7</span></h1>
-  <p>每天按设定时刻通过 CPA 接口刷新 Codex 额度窗口。也可手动勾选凭证执行。</p>
+  <h1>Quota Schedule Refresh <span class="badge">v0.7.0</span></h1>
+  <p>每天按设定时刻通过 CPA 接口刷新 Codex 额度窗口。也可手动勾选凭证执行。所有设置在「设置」页签内维护。</p>
   <p class="status" id="statusLine">正在读取状态…</p>
   <nav class="tabs">
     <button type="button" class="tab active" data-tab="run">凭证刷新</button>
+    <button type="button" class="tab" data-tab="settings">设置</button>
     <button type="button" class="tab" data-tab="logs">执行记录<span class="count" id="logCount"></span></button>
   </nav>
   <div id="panel-run" class="tab-panel active">
@@ -80,6 +93,66 @@ button:disabled{opacity:.6;cursor:not-allowed}
       <button type="button" id="runBtn">刷新选中凭证</button>
     </div>
     <p class="status" id="runMsg"></p>
+  </div>
+  <div id="panel-settings" class="tab-panel">
+    <label>插件设置</label>
+    <p class="hint">保存后立即生效并写入插件配置文件。CPA 的 config.yaml 只作为首次启动的基线，之后以这里为准。</p>
+    <div class="form">
+      <div class="field">
+        <label for="f_daily_at">每天触发时刻</label>
+        <input id="f_daily_at" type="text" placeholder="08:00" inputmode="numeric">
+        <p class="hint">格式 HH:MM，24 小时制。</p>
+      </div>
+      <div class="field">
+        <label for="f_timezone">时区</label>
+        <input id="f_timezone" type="text" placeholder="Asia/Shanghai">
+        <p class="hint">IANA 时区名。</p>
+      </div>
+      <div class="field">
+        <label for="f_model">刷新使用的模型</label>
+        <select id="f_model"></select>
+        <p class="hint">留空则用 CPA 模型列表第一项。</p>
+      </div>
+      <div class="field">
+        <label for="f_timeout_seconds">单次请求超时（秒）</label>
+        <input id="f_timeout_seconds" type="number" min="1" max="600">
+        <p class="hint">每次重试单独计时。</p>
+      </div>
+      <div class="field">
+        <label for="f_max_concurrency">并发上限</label>
+        <input id="f_max_concurrency" type="number" min="1" max="20">
+        <p class="hint">同时刷新的账号数。</p>
+      </div>
+      <div class="field">
+        <label for="f_retry_count">失败重试次数</label>
+        <input id="f_retry_count" type="number" min="0" max="10">
+        <p class="hint">额外重试次数，0 表示失败不重试。</p>
+      </div>
+      <div class="field">
+        <label for="f_retry_interval_seconds">重试间隔（秒）</label>
+        <input id="f_retry_interval_seconds" type="number" min="0" max="30">
+        <p class="hint">两次重试之间的等待时间。</p>
+      </div>
+      <div class="field">
+        <label for="f_prompt">刷新提示词</label>
+        <input id="f_prompt" type="text" placeholder="hello">
+        <p class="hint">留空沿用当前值。</p>
+      </div>
+      <div class="field wide">
+        <label>开关</label>
+        <div class="form" style="margin-top:0">
+          <label class="toggle" for="f_schedule_enabled"><input id="f_schedule_enabled" type="checkbox"><span>启用定时刷新</span></label>
+          <label class="toggle" for="f_skip_gpt_pro"><input id="f_skip_gpt_pro" type="checkbox"><span>定时刷新跳过 GPT Pro</span></label>
+          <label class="toggle" for="f_enable_disabled"><input id="f_enable_disabled" type="checkbox"><span>刷新前启用已禁用凭证</span></label>
+        </div>
+      </div>
+    </div>
+    <div class="actions">
+      <button type="button" class="secondary" id="settingsReloadBtn">放弃修改</button>
+      <button type="button" id="settingsSaveBtn">保存设置</button>
+    </div>
+    <p class="status" id="settingsMsg"></p>
+    <p class="hint" id="settingsPath"></p>
   </div>
   <div id="panel-logs" class="tab-panel">
     <label>最近 5 条执行记录</label>
@@ -93,6 +166,7 @@ button:disabled{opacity:.6;cursor:not-allowed}
 const STATUS="/v0/management/quota-schedule-refresh/status";
 const FILES="/v0/management/quota-schedule-refresh/auth-files";
 const RUN="/v0/management/quota-schedule-refresh/run";
+const SETTINGS="/v0/management/quota-schedule-refresh/settings";
 const KEY_NAME="cpa-management-key";
 const AUTH_STORE="cli-proxy-auth";
 const ENC_PREFIX="enc::v1::";
@@ -269,9 +343,62 @@ async function loadFiles(){
     return '<label class="item'+(file.disabled||skip?" disabled":"")+'"><input type="checkbox" value="'+esc(file.auth_id)+'"'+(skip?"":" checked")+'> '+esc(label)+extra+'</label>';
   }).join("");
 }
+function numValue(id, fallback){
+  const raw=document.getElementById(id).value.trim();
+  if(raw==="") return fallback;
+  const parsed=Number(raw);
+  return Number.isFinite(parsed)?parsed:fallback;
+}
+function fillSettings(view){
+  const s=view.settings||{};
+  document.getElementById("f_daily_at").value=s.daily_at||"";
+  document.getElementById("f_timezone").value=s.timezone||"";
+  document.getElementById("f_timeout_seconds").value=s.timeout_seconds||60;
+  document.getElementById("f_max_concurrency").value=s.max_concurrency||1;
+  document.getElementById("f_retry_count").value=s.retry_count==null?2:s.retry_count;
+  document.getElementById("f_retry_interval_seconds").value=s.retry_interval_seconds==null?2:s.retry_interval_seconds;
+  document.getElementById("f_prompt").value=s.prompt||"";
+  document.getElementById("f_schedule_enabled").checked=!!s.schedule_enabled;
+  document.getElementById("f_skip_gpt_pro").checked=!!s.skip_gpt_pro;
+  document.getElementById("f_enable_disabled").checked=!!s.enable_disabled;
+  const select=document.getElementById("f_model");
+  const models=(view.models||[]).slice();
+  const current=s.model||"";
+  if(current&&models.indexOf(current)<0) models.unshift(current);
+  select.innerHTML='<option value="">自动（列表第一项）</option>'+models.map(function(name){
+    return '<option value="'+esc(name)+'">'+esc(name)+'</option>';
+  }).join("");
+  select.value=current;
+  document.getElementById("settingsPath").textContent=
+    (view.stored?"设置文件：":"尚未保存过，将写入：")+(view.path||"-");
+}
+function readSettings(){
+  return {
+    schedule_enabled:document.getElementById("f_schedule_enabled").checked,
+    daily_at:document.getElementById("f_daily_at").value.trim(),
+    timezone:document.getElementById("f_timezone").value.trim(),
+    model:document.getElementById("f_model").value,
+    timeout_seconds:numValue("f_timeout_seconds",0),
+    enable_disabled:document.getElementById("f_enable_disabled").checked,
+    skip_gpt_pro:document.getElementById("f_skip_gpt_pro").checked,
+    max_concurrency:numValue("f_max_concurrency",0),
+    retry_count:numValue("f_retry_count",0),
+    retry_interval_seconds:numValue("f_retry_interval_seconds",0),
+    prompt:document.getElementById("f_prompt").value.trim()
+  };
+}
+function settingsMessage(text, cls){
+  const node=document.getElementById("settingsMsg");
+  node.textContent=text;
+  node.className="status"+(cls?" "+cls:"");
+}
+async function loadSettings(){
+  fillSettings(await call(SETTINGS,"GET"));
+}
 async function loadAll(){
   const data=await call(STATUS,"GET");
   renderStatus(data);
+  await loadSettings();
   await loadFiles();
 }
 async function verify(){
@@ -291,6 +418,29 @@ document.querySelectorAll(".tab").forEach(function(tab){
 });
 document.getElementById("reloadBtn").onclick=async function(){
   try{await loadAll();document.getElementById("runMsg").textContent="已从 CPA 重新读取凭证";}catch(err){document.getElementById("runMsg").textContent=String(err.message||err);}
+};
+document.getElementById("settingsReloadBtn").onclick=async function(){
+  try{
+    await loadSettings();
+    settingsMessage("已重新读取当前生效的设置","");
+  }catch(err){
+    settingsMessage(String(err.message||err),"err-text");
+  }
+};
+document.getElementById("settingsSaveBtn").onclick=async function(){
+  const btn=document.getElementById("settingsSaveBtn");
+  btn.disabled=true;
+  settingsMessage("正在保存…","");
+  try{
+    fillSettings(await call(SETTINGS,"PUT",{settings:readSettings()}));
+    renderStatus(await call(STATUS,"GET"));
+    await loadFiles();
+    settingsMessage("已保存并生效","ok-text");
+  }catch(err){
+    settingsMessage(String(err.message||err),"err-text");
+  }finally{
+    btn.disabled=false;
+  }
 };
 document.getElementById("runBtn").onclick=async function(){
   const ids=selectedAuthIds();

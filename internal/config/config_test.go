@@ -31,6 +31,58 @@ func TestSkipGPTProCanBeDisabled(t *testing.T) {
 	}
 }
 
+func TestSettingsRoundTrip(t *testing.T) {
+	base, err := Parse([]byte("daily_at: \"09:15\"\nmax_concurrency: 3\n"))
+	if err != nil {
+		t.Fatalf("parse base: %v", err)
+	}
+	settings := ToSettings(base)
+	if settings.DailyAt != "09:15" || settings.MaxConcurrency != 3 || settings.TimeoutSeconds != 60 {
+		t.Fatalf("settings = %+v", settings)
+	}
+	settings.SkipGPTPro = false
+	settings.RetryCount = 0
+	applied, err := settings.Apply(base)
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if applied.SkipGPTPro || applied.RetryCount != 0 || applied.DailyAt != "09:15" || applied.MaxConcurrency != 3 {
+		t.Fatalf("applied = %+v", applied)
+	}
+}
+
+func TestSettingsBlankFieldsFallBackToBase(t *testing.T) {
+	base := Default()
+	base.Prompt = "custom"
+	applied, err := Settings{}.Apply(base)
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if applied.DailyAt != base.DailyAt || applied.Timezone != base.Timezone {
+		t.Fatalf("schedule fields not preserved: %+v", applied)
+	}
+	if applied.MaxConcurrency != base.MaxConcurrency || applied.Timeout != base.Timeout {
+		t.Fatalf("numeric fields not preserved: %+v", applied)
+	}
+	if applied.Prompt != "custom" {
+		t.Fatalf("prompt = %q", applied.Prompt)
+	}
+}
+
+func TestApplyOverKeepsUnsetFields(t *testing.T) {
+	base, err := Parse([]byte("daily_at: \"07:00\"\nprompt: \"ping\"\n"))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	merged, err := ApplyOver(base, []byte(`{"schedule_enabled": true}`))
+	if err != nil {
+		t.Fatalf("apply over: %v", err)
+	}
+	if !merged.ScheduleEnabled || merged.DailyAt != "07:00" || merged.Prompt != "ping" {
+		t.Fatalf("merged = %+v", merged)
+	}
+}
+
 func TestScheduleFieldsSurviveInlineComment(t *testing.T) {
 	cfg, err := Parse([]byte("schedule_enabled: true # 开启定时\ndaily_at: 07:30 # 每天\nmax_concurrency: 2 # 并发\n"))
 	if err != nil {

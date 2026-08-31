@@ -21,6 +21,8 @@ func (r *Runtime) registerManagement() []byte {
 		"routes": []map[string]string{
 			{"method": http.MethodGet, "path": managementPrefix + "/status"},
 			{"method": http.MethodGet, "path": managementPrefix + "/auth-files"},
+			{"method": http.MethodGet, "path": managementPrefix + "/settings"},
+			{"method": http.MethodPut, "path": managementPrefix + "/settings"},
 			{"method": http.MethodPost, "path": managementPrefix + "/run"},
 		},
 		"resources": []map[string]string{
@@ -56,6 +58,9 @@ func (r *Runtime) serveHTTP(w http.ResponseWriter, request *http.Request) {
 		_, _ = w.Write([]byte(statusPageHTML))
 	case request.Method == http.MethodGet && strings.HasSuffix(path, "/auth-files"):
 		writeJSON(w, http.StatusOK, map[string]any{"files": r.listCredentials(request.Context())})
+	case strings.HasSuffix(path, "/settings") && (request.Method == http.MethodGet || request.Method == http.MethodPut || request.Method == http.MethodPost):
+		body, _ := io.ReadAll(request.Body)
+		r.handleSettings(w, request, body)
 	case request.Method == http.MethodGet && strings.HasSuffix(path, "/status"):
 		writeJSON(w, http.StatusOK, r.currentStatus())
 	case request.Method == http.MethodPost && strings.HasSuffix(path, "/run"):
