@@ -141,20 +141,3 @@ func firstNonBlank(values ...string) string {
 	}
 	return ""
 }
-
-func shortHostError(err error) string {
-	if err == nil {
-		return "宿主模型执行失败"
-	}
-	text := strings.TrimSpace(err.Error())
-	text = strings.ReplaceAll(text, "host callback host.model.execute: ", "")
-	text = strings.ReplaceAll(text, "host.model.execute: ", "")
-	if text == "" {
-		return "宿主模型执行失败"
-	}
-	runes := []rune(text)
-	if len(runes) > 180 {
-		text = string(runes[:180]) + "…"
-	}
-	return text
-}

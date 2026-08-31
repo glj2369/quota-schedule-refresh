@@ -24,6 +24,7 @@ type Result struct {
 	HTTPStatus int    `json:"http_status,omitempty"`
 	Attempts   int    `json:"attempts,omitempty"`
 	Reply      string `json:"reply,omitempty"`
+	Detail     string `json:"detail,omitempty"`
 }
 
 type Activator struct {
@@ -36,7 +37,7 @@ type Activator struct {
 func (a *Activator) Activate(ctx context.Context, authID, label, model string, disabled bool) Result {
 	result := Result{AuthID: authID, Label: label, Model: model, Status: "failed", UsedPath: "cpa"}
 	if a == nil || a.Host == nil {
-		result.LastError = "CPA接口刷新失败：缺少宿主依赖"
+		result.LastError = "缺少宿主依赖，插件未正确加载"
 		return result
 	}
 
@@ -46,6 +47,7 @@ func (a *Activator) Activate(ctx context.Context, authID, label, model string, d
 		cancel()
 		if err != nil {
 			result.LastError = "启用已禁用凭证失败"
+			result.Detail = clipRunes(compactSpace(err.Error()), 600)
 			return result
 		}
 	}
@@ -76,9 +78,7 @@ func (a *Activator) wakeCPA(ctx context.Context, authID, model string, previous 
 				return last
 			}
 		}
-		if last.Attempts > 1 && last.LastError != "" && !strings.Contains(last.LastError, "已重试") {
-			last.LastError = fmt.Sprintf("%s（已重试%d次）", last.LastError, last.Attempts)
-		}
+		// 重试次数由「结果」列单独展示，不再拼进错误文本。
 		return last
 	})
 }
@@ -116,7 +116,8 @@ func (a *Activator) executeOnce(ctx context.Context, model string, previous Resu
 	if err != nil {
 		previous.Status = "failed"
 		previous.Success = false
-		previous.LastError = "CPA接口刷新失败：" + shortHostError(err)
+		previous.LastError = friendlyHostError(err)
+		previous.Detail = clipRunes(compactSpace(err.Error()), 600)
 		previous.Reply = ""
 		return previous
 	}
@@ -126,15 +127,18 @@ func (a *Activator) executeOnce(ctx context.Context, model string, previous Resu
 		previous.Status = "failed"
 		previous.Success = false
 		if previous.Reply != "" {
-			previous.LastError = fmt.Sprintf("CPA接口刷新失败：HTTP %d · %s", response.StatusCode, previous.Reply)
+			previous.LastError = friendlyError(previous.Reply)
 		} else {
-			previous.LastError = fmt.Sprintf("CPA接口刷新失败：上游返回非成功状态（HTTP %d）", response.StatusCode)
+			previous.LastError = "上游返回非成功状态"
 		}
+		previous.Detail = clipRunes(compactSpace(string(response.Body)), 600)
+		previous.Reply = ""
 		return previous
 	}
 	previous.Status = "success"
 	previous.Success = true
 	previous.LastError = ""
+	previous.Detail = ""
 	return previous
 }
 

@@ -45,7 +45,9 @@ button:disabled{opacity:.6;cursor:not-allowed}
 .pill.fail{background:#fee2e2;color:#b91c1c}
 .pill.skip{background:#eff6ff;color:#1d4ed8}
 .pill.muted{background:#f3f4f6;color:#4b5563}
-.reply{max-width:260px;color:#374151;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.45;white-space:normal;word-break:break-word}
+.log-table td.reply{max-width:300px;color:#374151}
+.log-table td.reply.err{color:#b91c1c}
+.clamp{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.45;white-space:normal;word-break:break-word}
 .mono{font-variant-numeric:tabular-nums;color:#6b7280}
 .form{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px 18px;margin-top:12px}
 .field{min-width:0}
@@ -68,7 +70,7 @@ button:disabled{opacity:.6;cursor:not-allowed}
 <main>
 <section>
 <div id="loginGate">
-  <h1>Quota Schedule Refresh <span class="badge">v0.7.2</span></h1>
+  <h1>Quota Schedule Refresh <span class="badge">v0.7.3</span></h1>
   <p>正在尝试复用 CPA Manager 的登录会话。若自动读取失败，请填写 CPA 管理密钥。</p>
   <label for="managementKey">CPA 管理密钥</label>
   <input id="managementKey" type="password" autocomplete="current-password" placeholder="请输入 CPA 管理密钥">
@@ -76,7 +78,7 @@ button:disabled{opacity:.6;cursor:not-allowed}
   <p class="status" id="loginMsg">正在自动读取会话…</p>
 </div>
 <div id="appShell" hidden>
-  <h1>Quota Schedule Refresh <span class="badge">v0.7.2</span></h1>
+  <h1>Quota Schedule Refresh <span class="badge">v0.7.3</span></h1>
   <p>每天按设定时刻通过 CPA 接口刷新 Codex 额度窗口。也可手动勾选凭证执行。所有设置在「设置」页签内维护。</p>
   <p class="status" id="statusLine">正在读取状态…</p>
   <nav class="tabs">
@@ -310,17 +312,19 @@ function renderStatus(data){
     const row=entry.row||{};
     const skipped=row.status==="skipped";
     const ok=!!row.success;
-    const reply=row.reply||row.last_error||"—";
+    const failed=!ok&&!skipped;
+    const text=row.reply||row.last_error||"—";
+    const detail=row.detail||row.last_error||text;
     const attempts=row.attempts>1?(" · "+row.attempts+"次"):"";
     const result=skipped?"跳过":(ok?"成功":"失败");
     const pill=skipped?"skip":(ok?"ok":"fail");
-    return "<tr class=\""+(ok||skipped?"":"fail")+"\">"+
+    return "<tr class=\""+(failed?"fail":"")+"\">"+
       "<td class=\"mono\">"+esc(fmtTime(entry.at))+"</td>"+
       "<td><span class=\"pill muted\">"+esc(triggerName(entry.trigger))+"</span></td>"+
       "<td>"+esc(row.label||row.auth_id||"-")+"</td>"+
       "<td><span class=\"pill "+pill+"\">"+result+attempts+"</span></td>"+
       "<td class=\"mono\">"+esc(row.http_status||"-")+"</td>"+
-      "<td class=\"reply\" title=\""+esc(reply)+"\">"+esc(reply)+"</td>"+
+      "<td class=\"reply"+(failed?" err":"")+"\" title=\""+esc(detail)+"\"><div class=\"clamp\">"+esc(text)+"</div></td>"+
       "</tr>";
   }).join("");
   records.innerHTML="<table class=\"log-table\"><thead><tr><th>时间</th><th>类型</th><th>凭证</th><th>结果</th><th>HTTP</th><th>模型返回</th></tr></thead><tbody>"+body+"</tbody></table>";
