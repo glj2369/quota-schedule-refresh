@@ -38,7 +38,7 @@ func Default() Config {
 		Timeout:         time.Minute,
 		Prompt:          "hello",
 		EnableDisabled:  true,
-		SkipGPTPro:      false,
+		SkipGPTPro:      true,
 		MaxConcurrency:  1,
 		RetryCount:      2,
 		RetryInterval:   2 * time.Second,
@@ -51,8 +51,8 @@ type rawConfig struct {
 	ScheduleEnabled *bool   `json:"schedule_enabled"`
 	DailyAt         *string `json:"daily_at"`
 	Timezone        *string `json:"timezone"`
-	Model          *string `json:"model"`
-	TimeoutSeconds any     `json:"timeout_seconds"`
+	Model           *string `json:"model"`
+	TimeoutSeconds  any     `json:"timeout_seconds"`
 	Prompt          *string `json:"prompt"`
 	EnableDisabled  *bool   `json:"enable_disabled"`
 	SkipGPTPro      *bool   `json:"skip_gpt_pro"`
@@ -108,6 +108,8 @@ func yamlScalar(value string) any {
 	text := strings.TrimSpace(value)
 	if len(text) >= 2 && text[0] == text[len(text)-1] && (text[0] == '"' || text[0] == '\'') {
 		text = text[1 : len(text)-1]
+	} else if i := strings.Index(text, " #"); i >= 0 {
+		text = strings.TrimSpace(text[:i])
 	}
 	if text == "" {
 		return nil

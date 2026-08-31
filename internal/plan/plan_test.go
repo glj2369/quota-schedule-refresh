@@ -44,6 +44,31 @@ func TestPlanFromJWT(t *testing.T) {
 	}
 }
 
+func TestPlanFromPlainField(t *testing.T) {
+	body, _ := json.Marshal(map[string]any{"email": "a@b.com", "plan": "pro"})
+	if plan := FromAuth([]string{"codex-a@b.com.json"}, body); !IsGPTPro(plan) {
+		t.Fatalf("plain plan field = %q", plan)
+	}
+	nested, _ := json.Marshal(map[string]any{"account": map[string]any{"plan_type": "Plus"}})
+	if plan := FromAuth([]string{"codex-a@b.com.json"}, nested); plan != "plus" {
+		t.Fatalf("nested plan field = %q", plan)
+	}
+}
+
+func TestPlanFromMetadataExtras(t *testing.T) {
+	extras := map[string]any{"chatgpt_plan_type": "PRO"}
+	if plan := FromAuth([]string{"codex-a@b.com.json"}, nil, extras); !IsGPTPro(plan) {
+		t.Fatalf("metadata plan = %q", plan)
+	}
+}
+
+func TestUnknownPlanIsNotPro(t *testing.T) {
+	body, _ := json.Marshal(map[string]any{"plan": "something-else"})
+	if plan := FromAuth([]string{"codex-a@b.com.json"}, body); IsGPTPro(plan) {
+		t.Fatalf("unknown plan treated as pro: %q", plan)
+	}
+}
+
 func fakeJWT(payload map[string]any) string {
 	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none"}`))
 	raw, _ := json.Marshal(payload)

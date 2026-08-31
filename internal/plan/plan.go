@@ -20,6 +20,15 @@ var knownPlans = map[string]string{
 	"prolite":    "prolite",
 }
 
+var planKeys = []string{
+	"chatgpt_plan_type",
+	"chatgptPlanType",
+	"plan_type",
+	"planType",
+	"plan",
+	"subscription_plan",
+}
+
 func FromAuth(names []string, data []byte, extras ...map[string]any) string {
 	for _, name := range names {
 		if plan := fromFilename(name); plan != "" {
@@ -85,32 +94,35 @@ func fromJSON(data []byte) string {
 }
 
 func fromValue(value any) string {
+	return valuePlan(value, 0)
+}
+
+func valuePlan(value any, depth int) string {
+	if depth > 6 {
+		return ""
+	}
 	switch item := value.(type) {
 	case string:
 		return planFromJWT(item)
 	case map[string]any:
-		for _, key := range []string{"chatgpt_plan_type", "chatgptPlanType", "plan_type", "planType", "plan"} {
-			if plan := fromValue(item[key]); plan != "" {
-				if _, ok := knownPlans[plan]; ok {
-					return plan
-				}
+		for _, key := range planKeys {
+			if plan := knownPlans[Normalize(asString(item[key]))]; plan != "" {
+				return plan
 			}
 		}
-		for _, key := range []string{"id_token", "idToken"} {
+		for _, key := range []string{"id_token", "idToken", "access_token", "accessToken"} {
 			if plan := planFromJWT(asString(item[key])); plan != "" {
 				return plan
 			}
 		}
 		for _, nested := range item {
-			if plan := fromValue(nested); plan != "" {
-				if _, ok := knownPlans[plan]; ok {
-					return plan
-				}
+			if plan := valuePlan(nested, depth+1); plan != "" {
+				return plan
 			}
 		}
 	case []any:
 		for _, nested := range item {
-			if plan := fromValue(nested); plan != "" {
+			if plan := valuePlan(nested, depth+1); plan != "" {
 				return plan
 			}
 		}
@@ -147,8 +159,8 @@ func jwtPlan(value any, depth int) string {
 	}
 	switch item := value.(type) {
 	case map[string]any:
-		for _, key := range []string{"chatgpt_plan_type", "chatgptPlanType", "plan_type", "planType"} {
-			if plan := Normalize(asString(item[key])); knownPlans[plan] != "" {
+		for _, key := range planKeys {
+			if plan := knownPlans[Normalize(asString(item[key]))]; plan != "" {
 				return plan
 			}
 		}

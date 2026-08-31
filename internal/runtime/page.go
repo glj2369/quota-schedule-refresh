@@ -56,7 +56,7 @@ button:disabled{opacity:.6;cursor:not-allowed}
 <main>
 <section>
 <div id="loginGate">
-  <h1>Quota Schedule Refresh <span class="badge">v0.6.5</span></h1>
+  <h1>Quota Schedule Refresh <span class="badge">v0.6.6</span></h1>
   <p>正在尝试复用 CPA Manager 的登录会话。若自动读取失败，请填写 CPA 管理密钥。</p>
   <label for="managementKey">CPA 管理密钥</label>
   <input id="managementKey" type="password" autocomplete="current-password" placeholder="请输入 CPA 管理密钥">
@@ -64,7 +64,7 @@ button:disabled{opacity:.6;cursor:not-allowed}
   <p class="status" id="loginMsg">正在自动读取会话…</p>
 </div>
 <div id="appShell" hidden>
-  <h1>Quota Schedule Refresh <span class="badge">v0.6.5</span></h1>
+  <h1>Quota Schedule Refresh <span class="badge">v0.6.6</span></h1>
   <p>每天按设定时刻通过 CPA 接口刷新 Codex 额度窗口。也可手动勾选凭证执行。</p>
   <p class="status" id="statusLine">正在读取状态…</p>
   <nav class="tabs">
@@ -73,7 +73,7 @@ button:disabled{opacity:.6;cursor:not-allowed}
   </nav>
   <div id="panel-run" class="tab-panel active">
     <label>选择要刷新的凭证</label>
-    <p class="hint">只显示 Codex 账号。开启跳过 GPT Pro 后，Pro 凭证不会被刷新。</p>
+    <p class="hint">只显示 Codex 账号。开启跳过 GPT Pro 后，定时刷新不含 Pro 凭证；手动勾选仍会执行。</p>
     <div id="credentialList" class="list"></div>
     <div class="actions">
       <button type="button" class="secondary" id="reloadBtn">刷新列表</button>
@@ -265,8 +265,8 @@ async function loadFiles(){
     const label=file.label||file.auth_id;
     const pro=!!file.gpt_pro;
     const skip=skipGPTPro&&pro;
-    const extra=(file.disabled?"（已禁用）":"")+(pro?"（Pro）":(file.plan?"（"+file.plan+"）":""));
-    return '<label class="item'+(file.disabled||skip?" disabled":"")+'"><input type="checkbox" value="'+file.auth_id+'"'+(skip?"":" checked")+(skip?" disabled":"")+'> '+label+extra+'</label>';
+    const extra=(file.disabled?"（已禁用）":"")+(pro?(skip?"（Pro·定时跳过）":"（Pro）"):(file.plan?"（"+file.plan+"）":""));
+    return '<label class="item'+(file.disabled||skip?" disabled":"")+'"><input type="checkbox" value="'+esc(file.auth_id)+'"'+(skip?"":" checked")+'> '+esc(label)+extra+'</label>';
   }).join("");
 }
 async function loadAll(){

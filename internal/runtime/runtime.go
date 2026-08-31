@@ -15,7 +15,9 @@ import (
 	"quota-schedule-refresh/internal/wake"
 )
 
-const pluginVersion = "0.6.5"
+const pluginVersion = "0.6.6"
+
+const busyRetryInterval = 30 * time.Second
 
 type historyEntry struct {
 	At      time.Time     `json:"at"`
@@ -25,21 +27,21 @@ type historyEntry struct {
 }
 
 type Runtime struct {
-	mu             sync.Mutex
-	host           host.Client
-	config         config.Config
-	now            func() time.Time
-	cancel         context.CancelFunc
-	shutdown       bool
-	lastScanAt     time.Time
-	nextScanAt     time.Time
-	lastRun        []wake.Result
-	lastMessage    string
-	history        []historyEntry
-	preferredAuth  string
-	fallbackMu     sync.Mutex
-	running        bool
-	scheduleKey    string
+	mu            sync.Mutex
+	host          host.Client
+	config        config.Config
+	now           func() time.Time
+	cancel        context.CancelFunc
+	shutdown      bool
+	lastScanAt    time.Time
+	nextScanAt    time.Time
+	lastRun       []wake.Result
+	lastMessage   string
+	history       []historyEntry
+	preferredAuth string
+	fallbackMu    sync.Mutex
+	running       bool
+	scheduleKey   string
 }
 
 func New(hostClient host.Client) *Runtime {
@@ -132,7 +134,10 @@ func (r *Runtime) runLoop(ctx context.Context) {
 		if wait > 0 && !sleepCtx(ctx, wait) {
 			return
 		}
-		r.runOnce(ctx, "schedule", nil)
+		// 手动执行占用时定时触发会被跳过，此处退避避免空转。
+		if !r.runOnce(ctx, "schedule", nil) && !sleepCtx(ctx, busyRetryInterval) {
+			return
+		}
 	}
 }
 
@@ -145,11 +150,11 @@ func (r *Runtime) preScanWait() time.Duration {
 	return wait
 }
 
-func (r *Runtime) runOnce(ctx context.Context, trigger string, authIDs []string) {
+func (r *Runtime) runOnce(ctx context.Context, trigger string, authIDs []string) bool {
 	r.mu.Lock()
 	if r.running {
 		r.mu.Unlock()
-		return
+		return false
 	}
 	r.running = true
 	cfg := r.config
@@ -180,6 +185,7 @@ func (r *Runtime) runOnce(ctx context.Context, trigger string, authIDs []string)
 		r.history = r.history[:5]
 	}
 	r.mu.Unlock()
+	return true
 }
 
 func (r *Runtime) activateAll(ctx context.Context, cfg config.Config, authIDs []string) ([]wake.Result, string) {
@@ -208,7 +214,8 @@ func (r *Runtime) activateAll(ctx context.Context, cfg config.Config, authIDs []
 		if len(wanted) > 0 && !wanted[target.authID] && !wanted[target.label] {
 			continue
 		}
-		if cfg.SkipGPTPro && target.gptPro {
+		// 显式勾选凭证时按用户意图执行，跳过规则只作用于全量（定时）刷新。
+		if cfg.SkipGPTPro && target.gptPro && len(wanted) == 0 {
 			skipped = append(skipped, wake.Result{
 				AuthID:  target.authID,
 				Label:   target.label,
@@ -536,18 +543,18 @@ type ConfigField struct {
 }
 
 type Metadata struct {
-	Name         string        `json:"Name"`
-	Version      string        `json:"Version"`
-	Author       string        `json:"Author"`
+	Name             string        `json:"Name"`
+	Version          string        `json:"Version"`
+	Author           string        `json:"Author"`
 	GitHubRepository string        `json:"GitHubRepository"`
 	Description      string        `json:"Description"`
-	ConfigFields []ConfigField `json:"ConfigFields,omitempty"`
+	ConfigFields     []ConfigField `json:"ConfigFields,omitempty"`
 }
 
 type RegisterResult struct {
-	SchemaVersion int               `json:"schema_version"`
-	Metadata      Metadata          `json:"metadata"`
-	Capabilities  map[string]bool   `json:"capabilities"`
+	SchemaVersion int             `json:"schema_version"`
+	Metadata      Metadata        `json:"metadata"`
+	Capabilities  map[string]bool `json:"capabilities"`
 }
 
 func (r *Runtime) registrationResult() RegisterResult {
@@ -619,17 +626,17 @@ func (r *Runtime) pickSchedule(raw []byte) []byte {
 }
 
 type statusPayload struct {
-	ScheduleEnabled bool          `json:"schedule_enabled"`
-	DailyAt         string        `json:"daily_at"`
-	Timezone        string        `json:"timezone"`
-	Model           string        `json:"model"`
-	DefaultModel    string        `json:"default_model"`
-	MaxConcurrency  int           `json:"max_concurrency"`
-	RetryCount      int           `json:"retry_count"`
-	RetryInterval   int           `json:"retry_interval_seconds"`
-	SkipGPTPro      bool          `json:"skip_gpt_pro"`
-	NextScanAt      time.Time     `json:"next_scan_at"`
-	LastScanAt      time.Time     `json:"last_scan_at"`
+	ScheduleEnabled bool           `json:"schedule_enabled"`
+	DailyAt         string         `json:"daily_at"`
+	Timezone        string         `json:"timezone"`
+	Model           string         `json:"model"`
+	DefaultModel    string         `json:"default_model"`
+	MaxConcurrency  int            `json:"max_concurrency"`
+	RetryCount      int            `json:"retry_count"`
+	RetryInterval   int            `json:"retry_interval_seconds"`
+	SkipGPTPro      bool           `json:"skip_gpt_pro"`
+	NextScanAt      time.Time      `json:"next_scan_at"`
+	LastScanAt      time.Time      `json:"last_scan_at"`
 	LastMessage     string         `json:"last_message"`
 	LastRun         []wake.Result  `json:"last_run"`
 	History         []historyEntry `json:"history"`
