@@ -122,11 +122,6 @@ button:disabled{opacity:.6;cursor:not-allowed}
         <p class="hint">每次重试单独计时。</p>
       </div>
       <div class="field">
-        <label for="f_max_concurrency">并发上限</label>
-        <input id="f_max_concurrency" type="number" min="1" max="20">
-        <p class="hint">同时刷新的账号数。</p>
-      </div>
-      <div class="field">
         <label for="f_retry_count">失败重试次数</label>
         <input id="f_retry_count" type="number" min="0" max="10">
         <p class="hint">额外重试次数，0 表示失败不重试。</p>
@@ -305,7 +300,7 @@ function renderStatus(data){
   document.getElementById("versionBadge").textContent=data.version?("v"+data.version):"";
   const model=data.model||data.default_model||"-";
   document.getElementById("statusLine").textContent=
-    (data.schedule_enabled?"定时已开":"定时未开")+" · "+(data.daily_at||"-")+" · "+model+" · 并发 "+(data.max_concurrency||1)+" · 重试 "+(data.retry_count||0)+" · "+(skipGPTPro?"跳过 Pro":"含 Pro");
+    (data.schedule_enabled?"定时已开":"定时未开")+" · "+(data.daily_at||"-")+" · "+model+" · 重试 "+(data.retry_count||0)+" · "+(skipGPTPro?"跳过 Pro":"含 Pro");
   const records=document.getElementById("records");
   const history=data.history||[];
   const rows=[];
@@ -370,7 +365,6 @@ function fillSettings(view){
   document.getElementById("f_daily_at").value=s.daily_at||"";
   document.getElementById("f_timezone").value=s.timezone||"";
   document.getElementById("f_timeout_seconds").value=s.timeout_seconds||60;
-  document.getElementById("f_max_concurrency").value=s.max_concurrency||1;
   document.getElementById("f_retry_count").value=s.retry_count==null?2:s.retry_count;
   document.getElementById("f_retry_interval_seconds").value=s.retry_interval_seconds==null?2:s.retry_interval_seconds;
   document.getElementById("f_prompt").value=s.prompt||"";
@@ -397,7 +391,6 @@ function readSettings(){
     timeout_seconds:numValue("f_timeout_seconds",0),
     enable_disabled:document.getElementById("f_enable_disabled").checked,
     skip_gpt_pro:document.getElementById("f_skip_gpt_pro").checked,
-    max_concurrency:numValue("f_max_concurrency",0),
     retry_count:numValue("f_retry_count",0),
     retry_interval_seconds:numValue("f_retry_interval_seconds",0),
     prompt:document.getElementById("f_prompt").value.trim()

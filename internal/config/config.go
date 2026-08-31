@@ -22,7 +22,6 @@ type Config struct {
 	Prompt          string
 	EnableDisabled  bool
 	SkipGPTPro      bool
-	MaxConcurrency  int
 	RetryCount      int
 	RetryInterval   time.Duration
 	DailyHour       int
@@ -39,7 +38,6 @@ func Default() Config {
 		Prompt:          "hello",
 		EnableDisabled:  true,
 		SkipGPTPro:      true,
-		MaxConcurrency:  1,
 		RetryCount:      2,
 		RetryInterval:   2 * time.Second,
 		DailyHour:       8,
@@ -56,7 +54,6 @@ type rawConfig struct {
 	Prompt          *string `json:"prompt"`
 	EnableDisabled  *bool   `json:"enable_disabled"`
 	SkipGPTPro      *bool   `json:"skip_gpt_pro"`
-	MaxConcurrency  *int    `json:"max_concurrency"`
 	RetryCount      any     `json:"retry_count"`
 	RetryInterval   any     `json:"retry_interval_seconds"`
 }
@@ -75,6 +72,7 @@ func ApplyOver(base Config, data []byte) (Config, error) {
 }
 
 // Settings 是设置页面与私有配置文件共用的字段集，键名与 config.yaml 保持一致。
+// 旧文件里的 max_concurrency 会被忽略：刷新必须串行，见 wake.withBoostedAuth。
 type Settings struct {
 	ScheduleEnabled bool   `json:"schedule_enabled"`
 	DailyAt         string `json:"daily_at"`
@@ -83,7 +81,6 @@ type Settings struct {
 	TimeoutSeconds  int    `json:"timeout_seconds"`
 	EnableDisabled  bool   `json:"enable_disabled"`
 	SkipGPTPro      bool   `json:"skip_gpt_pro"`
-	MaxConcurrency  int    `json:"max_concurrency"`
 	RetryCount      int    `json:"retry_count"`
 	RetryInterval   int    `json:"retry_interval_seconds"`
 	Prompt          string `json:"prompt"`
@@ -98,7 +95,6 @@ func ToSettings(cfg Config) Settings {
 		TimeoutSeconds:  int(cfg.Timeout / time.Second),
 		EnableDisabled:  cfg.EnableDisabled,
 		SkipGPTPro:      cfg.SkipGPTPro,
-		MaxConcurrency:  cfg.MaxConcurrency,
 		RetryCount:      cfg.RetryCount,
 		RetryInterval:   int(cfg.RetryInterval / time.Second),
 		Prompt:          cfg.Prompt,
@@ -108,9 +104,6 @@ func ToSettings(cfg Config) Settings {
 // Apply 校验设置并生成配置，未填写的项沿用 base。
 // retry_count 与 retry_interval_seconds 的 0 是有效值，不做留空回填。
 func (s Settings) Apply(base Config) (Config, error) {
-	if s.MaxConcurrency < 1 {
-		s.MaxConcurrency = base.MaxConcurrency
-	}
 	if s.TimeoutSeconds <= 0 {
 		s.TimeoutSeconds = int(base.Timeout / time.Second)
 	}
@@ -206,12 +199,6 @@ func (raw rawConfig) apply(cfg Config) (Config, error) {
 	}
 	if raw.SkipGPTPro != nil {
 		cfg.SkipGPTPro = *raw.SkipGPTPro
-	}
-	if raw.MaxConcurrency != nil {
-		cfg.MaxConcurrency = *raw.MaxConcurrency
-	}
-	if cfg.MaxConcurrency < 1 {
-		return Config{}, fmt.Errorf("%w: max_concurrency 必须大于等于 1", ErrInvalidConfig)
 	}
 	if raw.RetryCount != nil {
 		parsed, err := parseBoundedInt(raw.RetryCount, 0, 10, "retry_count")

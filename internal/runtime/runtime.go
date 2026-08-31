@@ -16,7 +16,7 @@ import (
 	"quota-schedule-refresh/internal/wake"
 )
 
-const pluginVersion = "0.7.8"
+const pluginVersion = "0.7.9"
 
 const busyRetryInterval = 30 * time.Second
 
@@ -267,37 +267,15 @@ func (r *Runtime) activateAll(ctx context.Context, cfg config.Config, authIDs []
 		}
 		return nil, "没有可唤醒的 Codex 凭证"
 	}
-	workers := cfg.MaxConcurrency
-	if workers < 1 {
-		workers = 1
-	}
-	if workers > len(targets) {
-		workers = len(targets)
-	}
-	jobs := make(chan candidate, len(targets))
+	// 逐个执行：刷新前要临时提升凭证优先级并把它设为 CPA 的首选账号，
+	// 这些都是全局状态，并行会互相覆盖（见 wake.withBoostedAuth）。
 	collected := make([]wake.Result, 0, len(targets))
-	var collectedMu sync.Mutex
-	var wg sync.WaitGroup
-	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for target := range jobs {
-				if ctx.Err() != nil {
-					continue
-				}
-				item := activator.Activate(ctx, target.authID, target.label, target.model, target.disabled)
-				collectedMu.Lock()
-				collected = append(collected, item)
-				collectedMu.Unlock()
-			}
-		}()
-	}
 	for _, target := range targets {
-		jobs <- target
+		if ctx.Err() != nil {
+			break
+		}
+		collected = append(collected, activator.Activate(ctx, target.authID, target.label, target.model, target.disabled))
 	}
-	close(jobs)
-	wg.Wait()
 	ok, fail, skip := 0, 0, 0
 	for _, item := range collected {
 		switch {
@@ -624,7 +602,6 @@ type statusPayload struct {
 	Timezone        string         `json:"timezone"`
 	Model           string         `json:"model"`
 	DefaultModel    string         `json:"default_model"`
-	MaxConcurrency  int            `json:"max_concurrency"`
 	RetryCount      int            `json:"retry_count"`
 	RetryInterval   int            `json:"retry_interval_seconds"`
 	SkipGPTPro      bool           `json:"skip_gpt_pro"`
@@ -646,7 +623,6 @@ func (r *Runtime) currentStatus() statusPayload {
 		Timezone:        r.config.Timezone,
 		Model:           r.config.Model,
 		DefaultModel:    listed,
-		MaxConcurrency:  r.config.MaxConcurrency,
 		RetryCount:      r.config.RetryCount,
 		RetryInterval:   int(r.config.RetryInterval / time.Second),
 		SkipGPTPro:      r.config.SkipGPTPro,

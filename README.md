@@ -21,7 +21,7 @@ POST /v0/management/plugin-store/quota-schedule-refresh/install
 发布包：
 
 ```text
-quota-schedule-refresh_0.7.8_linux_amd64.zip
+quota-schedule-refresh_0.7.9_linux_amd64.zip
 checksums.txt
 ```
 
@@ -52,7 +52,6 @@ checksums.txt
 | `timeout_seconds` | 单次请求超时（秒），默认 `60` |
 | `enable_disabled` | 刷新前启用已禁用的凭证 |
 | `skip_gpt_pro` | 定时刷新跳过 GPT Pro 凭证，默认开启；页面手动勾选仍会执行 |
-| `max_concurrency` | 并发上限 |
 | `retry_count` | 失败重试次数，默认 `2` |
 | `retry_interval_seconds` | 重试间隔（秒），默认 `2` |
 | `prompt` | 刷新用的提示词，默认 `hello` |
@@ -69,11 +68,13 @@ plugins:
       timeout_seconds: "60"
       enable_disabled: true
       skip_gpt_pro: true
-      max_concurrency: 2
       retry_count: 2
       retry_interval_seconds: 2
       prompt: "hello"
 ```
+
+凭证逐个刷新，没有并发配置项：刷新前要临时提升目标凭证的优先级并把它设为 CPA 的首选账号，
+这些都是全局状态，并行执行会互相覆盖。
 
 ## 编译
 

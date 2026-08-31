@@ -30,7 +30,7 @@ func TestSaveSettingsAppliesAndPersists(t *testing.T) {
 	r := newTestRuntime(t)
 	body := []byte(`{"settings":{"schedule_enabled":false,"daily_at":"09:30","timezone":"Asia/Shanghai",` +
 		`"model":"gpt-5.6-sol","timeout_seconds":30,"enable_disabled":false,"skip_gpt_pro":false,` +
-		`"max_concurrency":2,"retry_count":0,"retry_interval_seconds":0,"prompt":"ping"}}`)
+		`"retry_count":0,"retry_interval_seconds":0,"prompt":"ping"}}`)
 	view, err := r.saveSettings(body)
 	if err != nil {
 		t.Fatalf("saveSettings: %v", err)
