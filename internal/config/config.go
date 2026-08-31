@@ -13,25 +13,17 @@ var ErrInvalidConfig = errors.New("配置无效")
 
 const DefaultTimezone = "Asia/Shanghai"
 
-type RequestMethod string
-
-const (
-	RequestDirect RequestMethod = "direct"
-	RequestCPA    RequestMethod = "cpa"
-)
-
 type Config struct {
-	ScheduleEnabled  bool
-	DailyAt          string
-	Timezone         string
-	Model            string
-	RequestMethod    RequestMethod
-	Timeout          time.Duration
-	Prompt           string
-	EnableDisabled   bool
-	MaxConcurrency   int
-	DailyHour        int
-	DailyMinute      int
+	ScheduleEnabled bool
+	DailyAt         string
+	Timezone        string
+	Model           string
+	Timeout         time.Duration
+	Prompt          string
+	EnableDisabled  bool
+	MaxConcurrency  int
+	DailyHour       int
+	DailyMinute     int
 }
 
 func Default() Config {
@@ -40,7 +32,6 @@ func Default() Config {
 		DailyAt:         "08:00",
 		Timezone:        DefaultTimezone,
 		Model:           "",
-		RequestMethod:   RequestDirect,
 		Timeout:         time.Minute,
 		Prompt:          "hello",
 		EnableDisabled:  true,
@@ -54,9 +45,8 @@ type rawConfig struct {
 	ScheduleEnabled *bool   `json:"schedule_enabled"`
 	DailyAt         *string `json:"daily_at"`
 	Timezone        *string `json:"timezone"`
-	Model           *string `json:"model"`
-	RequestMethod   *string `json:"request_method"`
-	TimeoutSeconds  any     `json:"timeout_seconds"`
+	Model          *string `json:"model"`
+	TimeoutSeconds any     `json:"timeout_seconds"`
 	Prompt          *string `json:"prompt"`
 	EnableDisabled  *bool   `json:"enable_disabled"`
 	MaxConcurrency  *int    `json:"max_concurrency"`
@@ -135,13 +125,6 @@ func (raw rawConfig) apply(cfg Config) (Config, error) {
 	if raw.Model != nil {
 		cfg.Model = strings.TrimSpace(*raw.Model)
 	}
-	if raw.RequestMethod != nil {
-		method, err := parseRequestMethod(*raw.RequestMethod)
-		if err != nil {
-			return Config{}, err
-		}
-		cfg.RequestMethod = method
-	}
 	if raw.Prompt != nil && strings.TrimSpace(*raw.Prompt) != "" {
 		cfg.Prompt = strings.TrimSpace(*raw.Prompt)
 	}
@@ -197,18 +180,6 @@ func parseClock(raw string) (int, int, error) {
 		return 0, 0, fmt.Errorf("%w: daily_at 分钟无效", ErrInvalidConfig)
 	}
 	return hour, minute, nil
-}
-
-func parseRequestMethod(raw string) (RequestMethod, error) {
-	value := strings.ToLower(strings.TrimSpace(raw))
-	switch value {
-	case "", string(RequestDirect), "direct_http":
-		return RequestDirect, nil
-	case string(RequestCPA), "cpa_api", "host", "scheduler_boost":
-		return RequestCPA, nil
-	default:
-		return "", fmt.Errorf("%w: request_method 必须是 direct 或 cpa", ErrInvalidConfig)
-	}
 }
 
 func parseTimeoutAny(raw any) (time.Duration, error) {

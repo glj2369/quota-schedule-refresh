@@ -14,7 +14,7 @@ import (
 	"quota-schedule-refresh/internal/wake"
 )
 
-const pluginVersion = "0.2.0"
+const pluginVersion = "0.3.0"
 
 type Runtime struct {
 	mu             sync.Mutex
@@ -521,8 +521,7 @@ func (r *Runtime) registrationResult() RegisterResult {
 				{Name: "schedule_enabled", Type: "boolean", Description: "启用每日定时刷新额度窗口。默认 false。\nEnable the daily timer.", DefaultValue: defaults.ScheduleEnabled},
 				{Name: "daily_at", Type: "string", Description: "每天触发时刻，格式 HH:MM，例如 08:00。\nDaily trigger time HH:MM.", DefaultValue: defaults.DailyAt},
 				{Name: "timezone", Type: "string", Description: "时区，默认 Asia/Shanghai。\nIANA timezone.", DefaultValue: defaults.Timezone},
-				{Name: "model", Type: modelType, Description: "从 CPA /v1/models 读取的 Codex 模型列表。默认第一项。\nCodex model from CPA /v1/models.", EnumValues: models, DefaultValue: listed},
-				{Name: "request_method", Type: "enum", Description: "请求方式：direct=直连上游；cpa=通过 CPA 接口。\nRequest method: direct or cpa.", EnumValues: []string{string(config.RequestDirect), string(config.RequestCPA)}, DefaultValue: string(defaults.RequestMethod)},
+				{Name: "model", Type: modelType, Description: "从 CPA /v1/models 读取的 Codex 模型列表。默认第一项。刷新只走 CPA host.model.execute。\nCodex model from CPA /v1/models. Refresh uses CPA only.", EnumValues: models, DefaultValue: listed},
 				{Name: "timeout_seconds", Type: "string", Description: "单次请求超时（秒）。默认 60。\nPer-request timeout in seconds.", DefaultValue: "60"},
 				{Name: "enable_disabled", Type: "boolean", Description: "刷新前自动启用已禁用凭证。默认 true。\nRe-enable disabled credentials before refresh.", DefaultValue: defaults.EnableDisabled},
 				{Name: "max_concurrency", Type: "integer", Description: "同时刷新的账号数上限（worker 池）。\nWorker pool size.", DefaultValue: defaults.MaxConcurrency},
@@ -566,7 +565,6 @@ type statusPayload struct {
 	DailyAt         string        `json:"daily_at"`
 	Timezone        string        `json:"timezone"`
 	Model           string        `json:"model"`
-	RequestMethod   string        `json:"request_method"`
 	DefaultModel    string        `json:"default_model"`
 	MaxConcurrency  int           `json:"max_concurrency"`
 	NextScanAt      time.Time     `json:"next_scan_at"`
@@ -584,7 +582,6 @@ func (r *Runtime) currentStatus() statusPayload {
 		DailyAt:         r.config.DailyAt,
 		Timezone:        r.config.Timezone,
 		Model:           r.config.Model,
-		RequestMethod:   string(r.config.RequestMethod),
 		DefaultModel:    listed,
 		MaxConcurrency:  r.config.MaxConcurrency,
 		NextScanAt:      r.nextScanAt,

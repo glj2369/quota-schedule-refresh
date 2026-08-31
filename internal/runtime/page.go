@@ -18,8 +18,8 @@ pre{background:#f3f4f6;padding:12px;border-radius:10px;overflow:auto}
 <body>
 <main>
 <section>
-<h1>Quota Schedule Refresh <small>v0.2.0</small></h1>
-<p>每天按设定时刻向 Codex 凭证发送一次刷新请求，用于打开新的额度窗口。</p>
+<h1>Quota Schedule Refresh <small>v0.3.0</small></h1>
+<p>每天按设定时刻通过 CPA 接口向 Codex 凭证发送一次刷新请求，用于打开新的额度窗口。</p>
 <p id="statusLine">正在读取状态…</p>
 <p><button id="runBtn">立即执行一次</button></p>
 <pre id="output"></pre>
@@ -44,7 +44,7 @@ async function refresh(){
     const data=JSON.parse(text);
     const model=data.model||data.default_model||"-";
     document.getElementById("statusLine").textContent=
-      (data.schedule_enabled?"定时已开":"定时未开")+" · "+(data.daily_at||"-")+" "+(data.timezone||"")+" · 模型 "+model+" · "+(data.request_method||"direct")+" · 并发 "+(data.max_concurrency||1)+" · "+(data.last_message||"尚无执行记录");
+      (data.schedule_enabled?"定时已开":"定时未开")+" · "+(data.daily_at||"-")+" "+(data.timezone||"")+" · 模型 "+model+" · CPA接口 · 并发 "+(data.max_concurrency||1)+" · "+(data.last_message||"尚无执行记录");
   }catch(err){
     document.getElementById("statusLine").textContent="读取失败，请确认已登录管理端。";
     document.getElementById("output").textContent=String(err);

@@ -6,6 +6,8 @@ Plugin ID / binary / config key: `quota-schedule-refresh`.
 
 Author: ssgs. Repository: https://github.com/glj2369/quota-schedule-refresh
 
+Refresh always uses CPA `host.model.execute`. There is no direct upstream path.
+
 ## Config
 
 | Field | Meaning |
@@ -14,7 +16,6 @@ Author: ssgs. Repository: https://github.com/glj2369/quota-schedule-refresh
 | `daily_at` | `HH:MM`, default `08:00` |
 | `timezone` | Default `Asia/Shanghai` |
 | `model` | Enum from CPA `GET /v1/models` (OpenAI/Codex, non-image). Empty uses the first listed model |
-| `request_method` | `direct` = `host.http.do` to Codex; `cpa` = `host.model.execute` |
 | `timeout_seconds` | Per-request timeout |
 | `enable_disabled` | Re-enable disabled credentials before refresh |
 | `max_concurrency` | Worker pool size |
@@ -33,7 +34,6 @@ plugins:
       daily_at: "08:00"
       timezone: "Asia/Shanghai"
       model: "gpt-5.6-sol"
-      request_method: direct
       timeout_seconds: "60"
       enable_disabled: true
       max_concurrency: 2
@@ -59,7 +59,7 @@ POST /v0/management/plugin-store/quota-schedule-refresh/install
 Release assets follow the official store layout:
 
 ```text
-quota-schedule-refresh_0.2.0_linux_amd64.zip
+quota-schedule-refresh_0.3.0_linux_amd64.zip
 checksums.txt
 ```
 
