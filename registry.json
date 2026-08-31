@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "plugins": [
+    {
+      "id": "quota-schedule-refresh",
+      "name": "Quota Schedule Refresh",
+      "description": "Refresh Codex quota windows once a day at a configured local time.",
+      "author": "ssgs",
+      "version": "0.2.0",
+      "repository": "https://github.com/glj2369/quota-schedule-refresh",
+      "homepage": "https://github.com/glj2369/quota-schedule-refresh",
+      "license": "MIT",
+      "tags": ["quota", "schedule", "refresh", "codex", "management"]
+    }
+  ]
+}
