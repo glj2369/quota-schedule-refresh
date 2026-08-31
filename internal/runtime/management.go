@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -18,11 +19,12 @@ const resourceStatusPath = "/status"
 func (r *Runtime) registerManagement() []byte {
 	return envelopeResult(map[string]any{
 		"routes": []map[string]string{
-			{"Method": http.MethodGet, "Path": managementPrefix + "/status"},
-			{"Method": http.MethodPost, "Path": managementPrefix + "/run"},
+			{"method": http.MethodGet, "path": managementPrefix + "/status"},
+			{"method": http.MethodGet, "path": managementPrefix + "/auth-files"},
+			{"method": http.MethodPost, "path": managementPrefix + "/run"},
 		},
 		"resources": []map[string]string{
-			{"Path": resourceStatusPath, "Menu": "Quota Schedule Refresh", "Description": "Refresh Codex quota windows on a daily schedule."},
+			{"path": resourceStatusPath, "menu": "Quota Schedule Refresh", "description": "Refresh Codex quota windows on a daily schedule."},
 		},
 	}, nil)
 }
@@ -47,14 +49,24 @@ func (r *Runtime) handleManagement(ctx context.Context, raw []byte) []byte {
 }
 
 func (r *Runtime) serveHTTP(w http.ResponseWriter, request *http.Request) {
+	path := request.URL.Path
 	switch {
-	case request.Method == http.MethodGet && request.URL.Path == resourceStatusPath:
+	case request.Method == http.MethodGet && (path == resourceStatusPath || path == "/"):
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write([]byte(statusPageHTML))
-	case request.Method == http.MethodGet && strings.HasSuffix(request.URL.Path, "/status"):
+	case request.Method == http.MethodGet && strings.HasSuffix(path, "/auth-files"):
+		writeJSON(w, http.StatusOK, map[string]any{"files": r.listCredentials(request.Context())})
+	case request.Method == http.MethodGet && strings.HasSuffix(path, "/status"):
 		writeJSON(w, http.StatusOK, r.currentStatus())
-	case request.Method == http.MethodPost && strings.HasSuffix(request.URL.Path, "/run"):
-		r.runOnce(request.Context(), "manual")
+	case request.Method == http.MethodPost && strings.HasSuffix(path, "/run"):
+		var payload struct {
+			AuthIDs []string `json:"auth_ids"`
+		}
+		body, _ := io.ReadAll(request.Body)
+		if len(body) > 0 {
+			_ = json.Unmarshal(body, &payload)
+		}
+		r.runOnce(request.Context(), "manual", payload.AuthIDs)
 		writeJSON(w, http.StatusOK, r.currentStatus())
 	default:
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})

@@ -14,7 +14,14 @@ import (
 	"quota-schedule-refresh/internal/wake"
 )
 
-const pluginVersion = "0.3.1"
+const pluginVersion = "0.4.0"
+
+type historyEntry struct {
+	At      time.Time     `json:"at"`
+	Trigger string        `json:"trigger"`
+	Message string        `json:"message"`
+	Results []wake.Result `json:"results"`
+}
 
 type Runtime struct {
 	mu             sync.Mutex
@@ -27,6 +34,7 @@ type Runtime struct {
 	nextScanAt     time.Time
 	lastRun        []wake.Result
 	lastMessage    string
+	history        []historyEntry
 	preferredAuth  string
 	fallbackMu     sync.Mutex
 	running        bool
@@ -123,7 +131,7 @@ func (r *Runtime) runLoop(ctx context.Context) {
 		if wait > 0 && !sleepCtx(ctx, wait) {
 			return
 		}
-		r.runOnce(ctx, "schedule")
+		r.runOnce(ctx, "schedule", nil)
 	}
 }
 
@@ -136,7 +144,7 @@ func (r *Runtime) preScanWait() time.Duration {
 	return wait
 }
 
-func (r *Runtime) runOnce(ctx context.Context, trigger string) {
+func (r *Runtime) runOnce(ctx context.Context, trigger string, authIDs []string) {
 	r.mu.Lock()
 	if r.running {
 		r.mu.Unlock()
@@ -144,8 +152,11 @@ func (r *Runtime) runOnce(ctx context.Context, trigger string) {
 	}
 	r.running = true
 	cfg := r.config
-	r.lastScanAt = r.now()
-	r.nextScanAt = cfg.NextTrigger(r.lastScanAt)
+	now := r.now()
+	if trigger == "schedule" {
+		r.lastScanAt = now
+		r.nextScanAt = cfg.NextTrigger(now)
+	}
 	r.mu.Unlock()
 	defer func() {
 		r.mu.Lock()
@@ -153,14 +164,24 @@ func (r *Runtime) runOnce(ctx context.Context, trigger string) {
 		r.mu.Unlock()
 	}()
 
-	results, message := r.activateAll(ctx, cfg)
+	results, message := r.activateAll(ctx, cfg, authIDs)
+	entry := historyEntry{
+		At:      now,
+		Trigger: trigger,
+		Message: message,
+		Results: append([]wake.Result(nil), results...),
+	}
 	r.mu.Lock()
 	r.lastRun = results
 	r.lastMessage = trigger + "：" + message
+	r.history = append([]historyEntry{entry}, r.history...)
+	if len(r.history) > 5 {
+		r.history = r.history[:5]
+	}
 	r.mu.Unlock()
 }
 
-func (r *Runtime) activateAll(ctx context.Context, cfg config.Config) ([]wake.Result, string) {
+func (r *Runtime) activateAll(ctx context.Context, cfg config.Config, authIDs []string) ([]wake.Result, string) {
 	if r.host == nil {
 		return nil, "缺少宿主依赖"
 	}
@@ -184,6 +205,18 @@ func (r *Runtime) activateAll(ctx context.Context, cfg config.Config) ([]wake.Re
 	}
 	if len(targets) == 0 {
 		return nil, "没有可唤醒的 Codex 凭证"
+	}
+	if wanted := selectedAuthSet(authIDs); len(wanted) > 0 {
+		filtered := make([]candidate, 0, len(wanted))
+		for _, target := range targets {
+			if wanted[target.authID] || wanted[target.label] {
+				filtered = append(filtered, target)
+			}
+		}
+		targets = filtered
+	}
+	if len(targets) == 0 {
+		return nil, "没有匹配的 Codex 凭证"
 	}
 	workers := cfg.MaxConcurrency
 	if workers < 1 {
@@ -569,8 +602,10 @@ type statusPayload struct {
 	MaxConcurrency  int           `json:"max_concurrency"`
 	NextScanAt      time.Time     `json:"next_scan_at"`
 	LastScanAt      time.Time     `json:"last_scan_at"`
-	LastMessage     string        `json:"last_message"`
-	LastRun         []wake.Result `json:"last_run"`
+	LastMessage     string         `json:"last_message"`
+	LastRun         []wake.Result  `json:"last_run"`
+	History         []historyEntry `json:"history"`
+	Version         string         `json:"version"`
 }
 
 func (r *Runtime) currentStatus() statusPayload {
@@ -588,5 +623,49 @@ func (r *Runtime) currentStatus() statusPayload {
 		LastScanAt:      r.lastScanAt,
 		LastMessage:     r.lastMessage,
 		LastRun:         append([]wake.Result(nil), r.lastRun...),
+		History:         append([]historyEntry(nil), r.history...),
+		Version:         pluginVersion,
 	}
+}
+
+type credentialPayload struct {
+	AuthID   string `json:"auth_id"`
+	Label    string `json:"label"`
+	Disabled bool   `json:"disabled"`
+}
+
+func (r *Runtime) listCredentials(ctx context.Context) []credentialPayload {
+	if r.host == nil {
+		return nil
+	}
+	files, err := r.host.ListAuthFiles(ctx)
+	if err != nil {
+		return nil
+	}
+	out := make([]credentialPayload, 0)
+	for _, file := range files {
+		enriched := r.enrichAuthFile(ctx, file)
+		if !isCodex(enriched) {
+			continue
+		}
+		authID := firstNonBlank(enriched.ID, enriched.Name, enriched.AuthIndex)
+		if authID == "" {
+			continue
+		}
+		label := firstNonBlank(enriched.Account, enriched.Email, enriched.Name, authID)
+		out = append(out, credentialPayload{AuthID: authID, Label: label, Disabled: enriched.Disabled})
+	}
+	return out
+}
+
+func selectedAuthSet(authIDs []string) map[string]bool {
+	wanted := map[string]bool{}
+	for _, id := range authIDs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		wanted[id] = true
+	}
+	return wanted
 }

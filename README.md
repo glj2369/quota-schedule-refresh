@@ -59,7 +59,7 @@ POST /v0/management/plugin-store/quota-schedule-refresh/install
 Release assets follow the official store layout:
 
 ```text
-quota-schedule-refresh_0.3.1_linux_amd64.zip
+quota-schedule-refresh_0.4.0_linux_amd64.zip
 checksums.txt
 ```
 
@@ -76,4 +76,5 @@ Place the binary at `plugins/linux/amd64/quota-schedule-refresh.so`.
 
 - Page: `/v0/resource/plugins/quota-schedule-refresh/status`
 - Status: `GET /v0/management/quota-schedule-refresh/status`
-- Run now: `POST /v0/management/quota-schedule-refresh/run`
+- Credentials: `GET /v0/management/quota-schedule-refresh/auth-files`
+- Run selected: `POST /v0/management/quota-schedule-refresh/run` with `{ "auth_ids": ["..."] }`
