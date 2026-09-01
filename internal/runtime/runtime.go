@@ -16,7 +16,7 @@ import (
 	"quota-schedule-refresh/internal/wake"
 )
 
-const pluginVersion = "0.7.9"
+const pluginVersion = "0.7.10"
 
 const busyRetryInterval = 30 * time.Second
 
@@ -49,8 +49,17 @@ type Runtime struct {
 	fallbackMu    sync.Mutex
 	modelsMu      sync.Mutex
 	modelsCache   []string
-	running       bool
-	scheduleKey   string
+	// modelsSyncedAt 是缓存上次被成功填充的时刻，modelsTriedAt 是上次发起查询的时刻。
+	// 两者分开记：查询失败时要保留旧缓存，但仍需退避，不能每个请求都重试。
+	modelsSyncedAt time.Time
+	modelsTriedAt  time.Time
+	// modelsInflight 非 nil 表示后台刷新进行中，关闭即代表结束，用于合并并发查询。
+	modelsInflight chan struct{}
+	modelsNow      func() time.Time
+	// stopped 在 Shutdown 时关闭，让冷启动的同步等待立即返回，不必等宿主回调。
+	stopped     chan struct{}
+	running     bool
+	scheduleKey string
 }
 
 func New(hostClient host.Client) *Runtime {
@@ -60,6 +69,7 @@ func New(hostClient host.Client) *Runtime {
 		baseConfig: config.Default(),
 		config:     config.Default(),
 		now:        time.Now,
+		stopped:    make(chan struct{}),
 	}
 }
 
@@ -147,8 +157,13 @@ func (r *Runtime) stopLocked() {
 func (r *Runtime) Shutdown() error {
 	r.mu.Lock()
 	r.stopLocked()
+	alreadyDown := r.shutdown
 	r.shutdown = true
 	r.mu.Unlock()
+	// 宿主重复调用 shutdown 时不能重复 close，否则 panic。
+	if !alreadyDown && r.stopped != nil {
+		close(r.stopped)
+	}
 	return nil
 }
 

@@ -21,7 +21,7 @@ POST /v0/management/plugin-store/quota-schedule-refresh/install
 发布包：
 
 ```text
-quota-schedule-refresh_0.7.9_linux_amd64.zip
+quota-schedule-refresh_0.7.10_linux_amd64.zip
 checksums.txt
 ```
 
