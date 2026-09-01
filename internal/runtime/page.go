@@ -40,6 +40,9 @@ button:disabled{opacity:.6;cursor:not-allowed}
 .log-table tr:hover td{background:#f8fafc}
 .log-table tr.fail td{background:#fef2f2}
 .log-table tr.fail:hover td{background:#fee2e2}
+.log-table tr.batch-start td{border-top:1px solid #e5e7eb}
+.log-table tr.batch-start:first-child td{border-top:0}
+.log-table td.batch{color:#6b7280;font-variant-numeric:tabular-nums;font-weight:650}
 .pill{display:inline-flex;align-items:center;border-radius:999px;padding:2px 8px;font-size:12px;font-weight:700;white-space:nowrap}
 .pill.ok{background:#ecfdf5;color:#047857}
 .pill.fail{background:#fee2e2;color:#b91c1c}
@@ -153,8 +156,8 @@ button:disabled{opacity:.6;cursor:not-allowed}
     <p class="hint" id="settingsPath"></p>
   </div>
   <div id="panel-logs" class="tab-panel">
-    <label>最近 5 条执行记录</label>
-    <p class="hint">最近 5 次执行，进程内保存，重启后清空。悬停「模型返回」可看全文。</p>
+    <label>最近 5 次执行</label>
+    <p class="hint">每次刷新为一批，同批凭证带序号。进程内保存，重启后清空。悬停「模型返回」可看全文。</p>
     <div id="records" class="records"></div>
   </div>
 </div>
@@ -300,16 +303,17 @@ function renderStatus(data){
   document.getElementById("versionBadge").textContent=data.version?("v"+data.version):"";
   const model=data.model||data.default_model||"-";
   document.getElementById("statusLine").textContent=
-    (data.schedule_enabled?"定时已开":"定时未开")+" · "+(data.daily_at||"-")+" · "+model+" · 重试 "+(data.retry_count||0)+" · "+(skipGPTPro?"跳过 Pro":"含 Pro");
+    (data.schedule_enabled?"定时已开":"定时未开")+" · "+(data.daily_at||"-")+" · "+model+" · 重试 "+(data.retry_count||0)+" · "+(skipGPTPro?"跳过 Pro/Free":"含 Pro/Free");
   const records=document.getElementById("records");
   const history=data.history||[];
   const rows=[];
-  history.forEach(function(item){
-    (item.results||[]).forEach(function(row){
-      rows.push({at:item.at,trigger:item.trigger,row:row});
+  history.forEach(function(item, batchIdx){
+    const list=item.results||[];
+    list.forEach(function(row, i){
+      rows.push({at:item.at,trigger:item.trigger,row:row,batch:batchIdx+1,seq:i+1,total:list.length,first:i===0});
     });
   });
-  document.getElementById("logCount").textContent=rows.length?(" "+rows.length):"";
+  document.getElementById("logCount").textContent=history.length?(" "+history.length):"";
   if(!rows.length){
     records.innerHTML='<div class="empty">暂无执行记录（重启后清空）</div>';
     return;
@@ -324,16 +328,19 @@ function renderStatus(data){
     const attempts=row.attempts>1?(" · "+row.attempts+"次"):"";
     const result=skipped?"跳过":(ok?"成功":"失败");
     const pill=skipped?"skip":(ok?"ok":"fail");
-    return "<tr class=\""+(failed?"fail":"")+"\">"+
-      "<td class=\"mono\">"+esc(fmtTime(entry.at))+"</td>"+
-      "<td><span class=\"pill muted\">"+esc(triggerName(entry.trigger))+"</span></td>"+
+    const mark="#"+entry.batch+(entry.total>1?(" · "+entry.seq+"/"+entry.total):"");
+    const trClass=(failed?"fail":"")+(entry.first?" batch-start":"");
+    return "<tr class=\""+trClass.trim()+"\">"+
+      "<td class=\"batch\">"+esc(mark)+"</td>"+
+      "<td class=\"mono\">"+(entry.first?esc(fmtTime(entry.at)):"")+"</td>"+
+      "<td>"+(entry.first?("<span class=\"pill muted\">"+esc(triggerName(entry.trigger))+"</span>"):"")+"</td>"+
       "<td>"+esc(row.label||row.auth_id||"-")+"</td>"+
       "<td><span class=\"pill "+pill+"\">"+result+attempts+"</span></td>"+
       "<td class=\"mono\">"+esc(row.http_status||"-")+"</td>"+
       "<td class=\"reply"+(failed?" err":"")+"\" title=\""+esc(detail)+"\"><div class=\"clamp\">"+esc(text)+"</div></td>"+
       "</tr>";
   }).join("");
-  records.innerHTML="<table class=\"log-table\"><thead><tr><th>时间</th><th>类型</th><th>凭证</th><th>结果</th><th>HTTP</th><th>模型返回</th></tr></thead><tbody>"+body+"</tbody></table>";
+  records.innerHTML="<table class=\"log-table\"><thead><tr><th>批次</th><th>时间</th><th>类型</th><th>凭证</th><th>结果</th><th>HTTP</th><th>模型返回</th></tr></thead><tbody>"+body+"</tbody></table>";
 }
 function selectedAuthIds(){
   return Array.prototype.map.call(document.querySelectorAll("#credentialList input:checked"), function(box){return box.value;});
