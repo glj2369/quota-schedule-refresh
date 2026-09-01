@@ -21,6 +21,8 @@ input[type=password]{width:100%;box-sizing:border-box;border:1px solid #d1d5db;b
 .item:hover{background:#f3f4f6}
 .item.disabled{color:#9ca3af}
 .item input{width:auto;margin:0}
+.filter{display:flex;align-items:center;gap:8px;margin:8px 0;font-size:13px;font-weight:600;color:#374151;cursor:pointer}
+.filter input{width:auto;margin:0}
 .actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}
 button{min-height:40px;border:0;border-radius:10px;padding:0 16px;background:#111827;color:#fff;cursor:pointer;font-weight:600}
 button.secondary{background:#e5e7eb;color:#111827}
@@ -91,7 +93,8 @@ button:disabled{opacity:.6;cursor:not-allowed}
   </nav>
   <div id="panel-run" class="tab-panel active">
     <label>选择要刷新的凭证</label>
-    <p class="hint">只显示 Codex 账号。开启跳过 GPT Pro / Free 后，定时刷新不含这两类凭证；手动勾选仍会执行。</p>
+    <p class="hint">只显示 Codex 账号。默认勾选 Plus；Pro / Free 不勾选。定时跳过规则仍按设置页开关执行。</p>
+    <label class="filter"><input id="hideSkipPlans" type="checkbox" checked><span>隐藏 Pro / Free</span></label>
     <div id="credentialList" class="list"></div>
     <div class="actions">
       <button type="button" class="secondary" id="reloadBtn">刷新列表</button>
@@ -174,6 +177,7 @@ const ENC_PREFIX="enc::v1::";
 const SECRET_SALT="cli-proxy-api-webui::secure-storage";
 let activeKey="";
 let skipGPTPro=false;
+let credentialFiles=[];
 function stores(){
   const out=[];
   try{out.push(localStorage);}catch(e){}
@@ -342,28 +346,46 @@ function renderStatus(data){
   }).join("");
   records.innerHTML="<table class=\"log-table\"><thead><tr><th>批次</th><th>时间</th><th>类型</th><th>凭证</th><th>结果</th><th>HTTP</th><th>模型返回</th></tr></thead><tbody>"+body+"</tbody></table>";
 }
+function isSkipPlan(file){
+  const plan=String(file.plan||"").toLowerCase();
+  return !!file.gpt_pro || !!file.skip_schedule || plan==="pro" || plan==="free";
+}
+function isPlus(file){
+  return String(file.plan||"").toLowerCase()==="plus";
+}
 function selectedAuthIds(){
   return Array.prototype.map.call(document.querySelectorAll("#credentialList input:checked"), function(box){return box.value;});
 }
 async function loadFiles(){
   const data=await call(FILES,"GET");
-  const files=data.files||[];
+  credentialFiles=data.files||[];
+  renderCredentialList();
+}
+function renderCredentialList(){
+  const files=credentialFiles||[];
   const box=document.getElementById("credentialList");
+  const hide=!!document.getElementById("hideSkipPlans").checked;
+  const visible=hide?files.filter(function(file){return !isSkipPlan(file);}):files;
   if(!files.length){
     box.innerHTML='<div class="empty">CPA 中没有可用的 Codex 凭证</div>';
     return;
   }
-  box.innerHTML=files.map(function(file){
+  if(!visible.length){
+    box.innerHTML='<div class="empty">没有可显示的凭证。取消「隐藏 Pro / Free」可看到被筛掉的账号。</div>';
+    return;
+  }
+  box.innerHTML=visible.map(function(file){
     const label=file.label||file.auth_id;
-    const skip=skipGPTPro&&!!file.skip_schedule;
+    const skip=isSkipPlan(file);
     let badge="";
     if(file.gpt_pro){
-      badge=skip?"（Pro·定时跳过）":"（Pro）";
+      badge="（Pro）";
     }else if(file.plan){
-      badge=skip?"（"+file.plan+"·定时跳过）":"（"+file.plan+"）";
+      badge="（"+file.plan+"）";
     }
     const extra=(file.disabled?"（已禁用）":"")+badge;
-    return '<label class="item'+(file.disabled||skip?" disabled":"")+'"><input type="checkbox" value="'+esc(file.auth_id)+'"'+(skip?"":" checked")+'> '+esc(label)+extra+'</label>';
+    const checked=isPlus(file)?" checked":"";
+    return '<label class="item'+(file.disabled||skip?" disabled":"")+'"><input type="checkbox" value="'+esc(file.auth_id)+'"'+checked+'> '+esc(label)+extra+'</label>';
   }).join("");
 }
 function numValue(id, fallback){
@@ -439,6 +461,9 @@ document.querySelectorAll(".tab").forEach(function(tab){
 });
 document.getElementById("reloadBtn").onclick=async function(){
   try{await loadAll();document.getElementById("runMsg").textContent="已从 CPA 重新读取凭证";}catch(err){document.getElementById("runMsg").textContent=String(err.message||err);}
+};
+document.getElementById("hideSkipPlans").onchange=function(){
+  renderCredentialList();
 };
 document.getElementById("settingsReloadBtn").onclick=async function(){
   try{
