@@ -60,6 +60,11 @@ jobs:
     # 2.36). Building on the bare runner (Ubuntu 24.04, glibc 2.39) would emit
     # symbol requirements the CPA process cannot satisfy.
     container: golang:1.25-bookworm
+    # Container jobs otherwise default to `sh`; the image ships bash and the
+    # steps below rely on it.
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
 
@@ -81,7 +86,11 @@ jobs:
           GOOS: linux
           GOARCH: amd64
         run: |
-          go build -buildmode=c-shared -o quota-schedule-refresh.so .
+          # -buildvcs=false: the checkout is owned by another uid, so git
+          # refuses to report status inside the container. Stamping is also
+          # unwanted -- the artifacts published so far were built from a
+          # .git-less copy and carry no VCS metadata.
+          go build -buildvcs=false -buildmode=c-shared -o quota-schedule-refresh.so .
           rm -f quota-schedule-refresh.h
           ls -l quota-schedule-refresh.so
 
