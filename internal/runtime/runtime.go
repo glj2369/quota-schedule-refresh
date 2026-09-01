@@ -16,7 +16,7 @@ import (
 	"quota-schedule-refresh/internal/wake"
 )
 
-const pluginVersion = "0.7.11"
+const pluginVersion = "0.7.12"
 
 const busyRetryInterval = 30 * time.Second
 
@@ -54,8 +54,12 @@ type Runtime struct {
 	modelsSyncedAt time.Time
 	modelsTriedAt  time.Time
 	// modelsInflight 非 nil 表示后台刷新进行中，关闭即代表结束，用于合并并发查询。
-	modelsInflight chan struct{}
-	modelsNow      func() time.Time
+	// modelsRefreshAt 是它的发起时刻：卡死的刷新永远不会清掉这个标记，
+	// 所以只在 modelsRefreshDeadline 之内相信它。
+	modelsInflight  chan struct{}
+	modelsRefreshAt time.Time
+	modelsNow       func() time.Time
+	modelsQuery     func() []string
 	// stopped 在 Shutdown 时关闭，让冷启动的同步等待立即返回，不必等宿主回调。
 	stopped     chan struct{}
 	running     bool
@@ -104,6 +108,8 @@ func (r *Runtime) register(raw []byte) []byte {
 	if err := r.replaceConfig(base, r.mergeStoredSettings(base)); err != nil {
 		return failure(err)
 	}
+	// 预热缓存，让设置页第一次打开就有模型可选，不必靠某个请求去触发冷启动。
+	go r.scheduleModelsRefresh()
 	return envelopeResult(r.registrationResult(), nil)
 }
 

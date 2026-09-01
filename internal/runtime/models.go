@@ -1,7 +1,6 @@
 package runtime
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -28,6 +27,14 @@ const modelsColdStartWait = 3 * time.Second
 // modelsQueryTimeout 是单次模型查询的超时。
 const modelsQueryTimeout = 2 * time.Second
 
+// modelsRefreshDeadline 是「已经有刷新在跑」这个判断的有效期。
+//
+// 后台刷新有可能永远回不来：凭证元数据那条路要走宿主回调，而 callHost 是同步
+// cgo 调用，进入宿主之后连 defer 都不会再执行，modelsInflight 于是永远留着。
+// 没有这个上限，一次卡死就永久停掉了后续每一次刷新——缓存为空时下拉列表再也
+// 填不上，哪怕 CPA 早就恢复了。超过这个时限就允许新的刷新接替它。
+const modelsRefreshDeadline = 10 * time.Second
+
 // availableModels 缓存优先：命中未过期的缓存就直接返回，不发请求。
 // 缓存过期只触发一次后台刷新并立即返回旧值；只有进程内从未查询过时才短暂同步等待。
 //
@@ -52,6 +59,14 @@ func (r *Runtime) availableModels() []string {
 	return sortedModels(cached)
 }
 
+// scheduleModelsRefresh 只负责按缓存状态发起一次后台刷新，不等它完成。
+func (r *Runtime) scheduleModelsRefresh() {
+	if r == nil {
+		return
+	}
+	r.modelsForRequest()
+}
+
 // modelsForRequest 返回当前缓存，并在需要时启动一次后台刷新。
 // 第二个返回值非 nil 表示这是进程内第一次查询，调用方可以短暂等待它完成。
 func (r *Runtime) modelsForRequest() ([]string, <-chan struct{}) {
@@ -73,9 +88,10 @@ func (r *Runtime) modelsForRequest() ([]string, <-chan struct{}) {
 	return cached, nil
 }
 
-// startModelsRefreshLocked 启动后台刷新，已有刷新在跑时复用它。调用方必须持有 modelsMu。
+// startModelsRefreshLocked 启动后台刷新。已有刷新在跑且还没超过 modelsRefreshDeadline
+// 时复用它，超过了就另起一个接替。调用方必须持有 modelsMu。
 func (r *Runtime) startModelsRefreshLocked(now time.Time) <-chan struct{} {
-	if r.modelsInflight != nil {
+	if r.modelsInflight != nil && now.Sub(r.modelsRefreshAt) < modelsRefreshDeadline {
 		return r.modelsInflight
 	}
 	if r.isStopped() {
@@ -83,29 +99,48 @@ func (r *Runtime) startModelsRefreshLocked(now time.Time) <-chan struct{} {
 	}
 	done := make(chan struct{})
 	r.modelsInflight = done
+	r.modelsRefreshAt = now
 	r.modelsTriedAt = now
 	go func() {
-		found := r.queryModels()
+		found := r.runModelsQuery()
 		r.modelsMu.Lock()
-		// 查询失败（found 为空）时保留旧缓存，只清掉在途标记。
+		// 查询失败（found 为空）时保留旧缓存：下拉列表宁可旧，不可空。
 		if len(found) > 0 {
 			r.modelsCache = append([]string(nil), found...)
 			r.modelsSyncedAt = r.modelsClockLocked()
 		}
-		r.modelsInflight = nil
+		// 被接替的那次刷新可能很久以后才回来，它不能清掉接替者的在途标记。
+		if r.modelsInflight == done {
+			r.modelsInflight = nil
+		}
 		r.modelsMu.Unlock()
 		close(done)
 	}()
 	return done
 }
 
-// queryModels 依次尝试三种来源，全部失败才返回空。只允许在后台 goroutine 里调用。
+// runModelsQuery 是 queryModels 的注入点，只有测试会替换它。
+func (r *Runtime) runModelsQuery() []string {
+	if r.modelsQuery != nil {
+		return r.modelsQuery()
+	}
+	return r.queryModels()
+}
+
+// queryModels 只允许在后台 goroutine 里调用。
+//
+// 直连既是首选也几乎是唯一的来源：它的 net/http 超时由插件自己的 goroutine 执行，
+// 是这条路上唯一真正打得断的等待。CPA 应答了就以它的答案为准，即便答案是空的——
+// 它此刻列不出的模型，拿去唤醒也只会换回一个 unknown provider。只有直连压根用不上
+// （配置里读不到 api-key，或连不上 CPA）时才回落到凭证元数据，因为那条路要走宿主
+// 回调，一旦卡住就再也回不来。
 func (r *Runtime) queryModels() []string {
-	if models := r.directModels(); len(models) > 0 {
+	models, answered := r.directModels()
+	if len(models) > 0 {
 		return models
 	}
-	if models := r.hostModels(); len(models) > 0 {
-		return models
+	if answered {
+		return nil
 	}
 	return r.listedModels()
 }
@@ -267,44 +302,21 @@ func (r *Runtime) cachedModels() []string {
 	return append([]string(nil), r.modelsCache...)
 }
 
-// directModels 直连本机 CPA 查模型列表。这是唯一超时真正生效的来源，
-// 所以放在最前面：net/http 的 Timeout 由插件自己的 goroutine 执行。
-func (r *Runtime) directModels() []string {
+// directModels 直连本机 CPA 查模型列表。net/http 的 Timeout 由插件自己的
+// goroutine 执行，所以这是唯一超时真正生效的来源。
+//
+// 第二个返回值表示 CPA 是否给出了应答。「CPA 答了一个空列表」和「压根问不到 CPA」
+// 是两件事：前者说明它此刻确实没有可用的 gpt/codex 模型，后者才需要换个来源问。
+func (r *Runtime) directModels() ([]string, bool) {
 	port, apiKey := localCPAListen()
 	if apiKey == "" {
-		return nil
+		return nil, false
 	}
 	response, err := localModelsDirect(localModelsURL(port), apiKey)
 	if err != nil || !host.IsHTTPSuccess(response.StatusCode) {
-		return nil
+		return nil, false
 	}
-	return parseOpenAIModelIDs(response.Body)
-}
-
-// hostModels 走宿主的 HTTP 能力，作为直连不通时的兜底。
-// 注意 ctx 超时对宿主回调不生效，只能靠后台刷新把它挡在请求路径之外。
-func (r *Runtime) hostModels() []string {
-	if r == nil || r.host == nil {
-		return nil
-	}
-	port, apiKey := localCPAListen()
-	if apiKey == "" {
-		return nil
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), modelsQueryTimeout)
-	defer cancel()
-	response, err := r.host.HTTPDo(ctx, host.HTTPRequest{
-		Method: http.MethodGet,
-		URL:    localModelsURL(port),
-		Headers: host.Header{
-			"Authorization": {"Bearer " + apiKey},
-			"Accept":        {"application/json"},
-		},
-	})
-	if err != nil || !host.IsHTTPSuccess(response.StatusCode) {
-		return nil
-	}
-	return parseOpenAIModelIDs(response.Body)
+	return parseOpenAIModelIDs(response.Body), true
 }
 
 func localModelsURL(port int) string {

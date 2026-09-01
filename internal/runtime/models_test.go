@@ -231,6 +231,81 @@ func TestAvailableModelsDoesNotBlockOnInflightRefresh(t *testing.T) {
 	}
 }
 
+// TestModelsRefreshRecoversFromAStuckQuery 锁住本次修复的行为：一次永远回不来的
+// 刷新不能永久停掉后续刷新。宿主回调卡死时就是这样——它是同步 cgo 调用，卡住之后
+// 连 defer 都不执行，在途标记再也清不掉。修复前，缓存会永久为空，下拉列表也就永久
+// 是空的，哪怕 CPA 早已恢复。
+func TestModelsRefreshRecoversFromAStuckQuery(t *testing.T) {
+	r := newModelsRuntime(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+	clock := newTestClock()
+	r.modelsNow = clock.now
+
+	stuck := make(chan struct{})
+	defer close(stuck)
+	var calls atomic.Int64
+	want := []string{"gpt-5.5", "gpt-5.6-sol"}
+	r.modelsQuery = func() []string {
+		if calls.Add(1) == 1 {
+			<-stuck
+			return nil
+		}
+		return append([]string(nil), want...)
+	}
+
+	// 第一次查询发起后就再也不返回。冷启动的同步等待会自己超时，所以放到
+	// 另一个 goroutine 里，免得测试跟着一起等。
+	go r.availableModels()
+	waitForModelsQueries(t, &calls, 1)
+
+	// 退避期内不该有新的查询：这是原有行为，不能被这次修复改坏。
+	clock.advance(modelsRetryInterval - time.Second)
+	if got := r.availableModels(); len(got) != 0 {
+		t.Fatalf("availableModels() = %v, want an empty list while the first query is stuck", got)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("started %d queries inside the retry backoff, want 1", got)
+	}
+
+	// 退避和刷新时限都过去之后，必须允许新的刷新接替那个卡住的 goroutine。
+	clock.advance(modelsRetryInterval + modelsRefreshDeadline)
+	if got := r.availableModels(); len(got) != 0 {
+		t.Fatalf("availableModels() = %v, want the stale (empty) cache while the refresh runs", got)
+	}
+	waitForModelsQueries(t, &calls, 2)
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if got := r.cachedModels(); reflect.DeepEqual(got, want) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("cachedModels() = %v, want %v after the replacement refresh", r.cachedModels(), want)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	// 卡住的那次刷新迟到返回时，不能清掉接替者的在途标记，也不能清空缓存。
+	stuck <- struct{}{}
+	time.Sleep(200 * time.Millisecond)
+	if got := r.availableModels(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("availableModels() = %v after the stuck query returned, want %v", got, want)
+	}
+}
+
+func waitForModelsQueries(t *testing.T, calls *atomic.Int64, want int64) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if calls.Load() >= want {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("started %d model queries, want %d", calls.Load(), want)
+}
+
 func waitForModelsRefresh(t *testing.T, r *Runtime) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
