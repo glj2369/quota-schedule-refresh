@@ -76,8 +76,10 @@ jobs:
       - name: Record toolchain and libc
         run: |
           go version
-          gcc --version | head -1
-          ldd --version | head -1
+          # sed -n '1p' rather than `head -1`: head exits after the first line,
+          # which SIGPIPEs the writer and trips `pipefail` (exit 141) at random.
+          gcc --version | sed -n '1p'
+          ldd --version | sed -n '1p'
           . /etc/os-release && echo "base image: $PRETTY_NAME"
 
       - name: Build c-shared library
