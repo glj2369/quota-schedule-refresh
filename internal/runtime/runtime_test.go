@@ -268,4 +268,3 @@ func TestScheduleStillWaitsBeforeTrigger(t *testing.T) {
 		t.Fatal("before 08:00 should not consume the day's trigger")
 	}
 }
-
