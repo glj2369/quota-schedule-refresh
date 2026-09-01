@@ -93,8 +93,8 @@ button:disabled{opacity:.6;cursor:not-allowed}
   </nav>
   <div id="panel-run" class="tab-panel active">
     <label>选择要刷新的凭证</label>
-    <p class="hint">只显示 Codex 账号。默认勾选 Plus；Pro / Free 不勾选。定时跳过规则仍按设置页开关执行。</p>
-    <label class="filter"><input id="hideSkipPlans" type="checkbox" checked><span>隐藏 Pro / Free</span></label>
+    <p class="hint">只显示 Codex 账号。默认勾选 Plus；Pro / Pro Lite / Free 不勾选。定时跳过规则仍按设置页开关执行。</p>
+    <label class="filter"><input id="hideSkipPlans" type="checkbox" checked><span>隐藏 Pro / Pro Lite / Free</span></label>
     <div id="credentialList" class="list"></div>
     <div class="actions">
       <button type="button" class="secondary" id="reloadBtn">刷新列表</button>
@@ -146,7 +146,7 @@ button:disabled{opacity:.6;cursor:not-allowed}
         <label>开关</label>
         <div class="form" style="margin-top:0">
           <label class="toggle" for="f_schedule_enabled"><input id="f_schedule_enabled" type="checkbox"><span>启用定时刷新</span></label>
-          <label class="toggle" for="f_skip_gpt_pro"><input id="f_skip_gpt_pro" type="checkbox"><span>定时刷新跳过 GPT Pro / Free</span></label>
+          <label class="toggle" for="f_skip_gpt_pro"><input id="f_skip_gpt_pro" type="checkbox"><span>定时刷新跳过 GPT Pro / Pro Lite / Free</span></label>
           <label class="toggle" for="f_enable_disabled"><input id="f_enable_disabled" type="checkbox"><span>刷新前启用已禁用凭证</span></label>
         </div>
       </div>
@@ -307,7 +307,7 @@ function renderStatus(data){
   document.getElementById("versionBadge").textContent=data.version?("v"+data.version):"";
   const model=data.model||data.default_model||"-";
   document.getElementById("statusLine").textContent=
-    (data.schedule_enabled?"定时已开":"定时未开")+" · "+(data.daily_at||"-")+" · "+model+" · 重试 "+(data.retry_count||0)+" · "+(skipGPTPro?"跳过 Pro/Free":"含 Pro/Free");
+    (data.schedule_enabled?"定时已开":"定时未开")+" · "+(data.daily_at||"-")+" · "+model+" · 重试 "+(data.retry_count||0)+" · "+(skipGPTPro?"跳过 Pro/Pro Lite/Free":"含 Pro/Pro Lite/Free");
   const records=document.getElementById("records");
   const history=data.history||[];
   const rows=[];
@@ -348,7 +348,7 @@ function renderStatus(data){
 }
 function isSkipPlan(file){
   const plan=String(file.plan||"").toLowerCase();
-  return !!file.gpt_pro || !!file.skip_schedule || plan==="pro" || plan==="free";
+  return !!file.gpt_pro || !!file.skip_schedule || plan==="pro" || plan==="prolite" || plan==="free";
 }
 function isPlus(file){
   return String(file.plan||"").toLowerCase()==="plus";
@@ -371,15 +371,18 @@ function renderCredentialList(){
     return;
   }
   if(!visible.length){
-    box.innerHTML='<div class="empty">没有可显示的凭证。取消「隐藏 Pro / Free」可看到被筛掉的账号。</div>';
+    box.innerHTML='<div class="empty">没有可显示的凭证。取消「隐藏 Pro / Pro Lite / Free」可看到被筛掉的账号。</div>';
     return;
   }
   box.innerHTML=visible.map(function(file){
     const label=file.label||file.auth_id;
     const skip=isSkipPlan(file);
+    const plan=String(file.plan||"").toLowerCase();
     let badge="";
     if(file.gpt_pro){
       badge="（Pro）";
+    }else if(plan==="prolite"){
+      badge="（Pro Lite）";
     }else if(file.plan){
       badge="（"+file.plan+"）";
     }

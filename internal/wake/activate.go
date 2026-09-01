@@ -59,7 +59,7 @@ func (a *Activator) wakeCPA(ctx context.Context, authID, model string, previous 
 	if attempts < 1 {
 		attempts = 1
 	}
-	return a.withBoostedAuth(ctx, authID, func(callCtx context.Context) Result {
+	return a.withBoostedAuth(ctx, previous, func(callCtx context.Context) Result {
 		var last Result
 		for i := 1; i <= attempts; i++ {
 			attemptCtx, cancel := a.attemptContext(callCtx)

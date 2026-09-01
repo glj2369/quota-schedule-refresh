@@ -34,7 +34,14 @@ func (f *fakeHost) ListAuthFiles(_ context.Context) ([]host.AuthFile, error) {
 	return f.files, nil
 }
 
-func (f *fakeHost) GetAuthFile(_ context.Context, _ string) (host.AuthFile, error) {
+func (f *fakeHost) GetAuthFile(_ context.Context, key string) (host.AuthFile, error) {
+	for _, file := range f.files {
+		if file.ID == key || file.Name == key || file.AuthIndex == key {
+			cloned := file
+			cloned.Data = append([]byte(nil), file.Data...)
+			return cloned, nil
+		}
+	}
 	return host.AuthFile{}, errors.New("not available")
 }
 
@@ -42,7 +49,14 @@ func (f *fakeHost) GetRuntimeAuthFile(_ context.Context, _ string) (host.AuthFil
 	return host.AuthFile{}, errors.New("not available")
 }
 
-func (f *fakeHost) SaveAuthFile(_ context.Context, _ string, _ []byte) error {
+func (f *fakeHost) SaveAuthFile(_ context.Context, name string, data []byte) error {
+	for i, file := range f.files {
+		if file.Name == name || file.ID == name {
+			f.files[i].Data = append([]byte(nil), data...)
+			return nil
+		}
+	}
+	f.files = append(f.files, host.AuthFile{Name: name, Data: append([]byte(nil), data...)})
 	return nil
 }
 
@@ -117,10 +131,12 @@ func TestActivateAllReportsMissingModel(t *testing.T) {
 }
 
 func TestActivateAllSkipsProAndFreeOnSchedule(t *testing.T) {
+	tokenDoc := []byte(`{"access_token":"` + strings.Repeat("x", 40) + `","refresh_token":"` + strings.Repeat("y", 40) + `","type":"codex"}`)
 	client := &fakeHost{files: []host.AuthFile{
-		{ID: "plus-1", Name: "codex-a-plus.json", Provider: "codex", Models: []string{"gpt-5.4"}},
-		{ID: "pro-1", Name: "codex-b-pro.json", Provider: "codex", Models: []string{"gpt-5.4"}},
-		{ID: "free-1", Name: "codex-c-free.json", Provider: "codex", Models: []string{"gpt-5.4"}},
+		{ID: "plus-1", Name: "codex-a-plus.json", Provider: "codex", Models: []string{"gpt-5.4"}, Data: tokenDoc},
+		{ID: "pro-1", Name: "codex-b-pro.json", Provider: "codex", Models: []string{"gpt-5.4"}, Data: tokenDoc},
+		{ID: "lite-1", Name: "codex-d-prolite.json", Provider: "codex", Models: []string{"gpt-5.4"}, Data: tokenDoc},
+		{ID: "free-1", Name: "codex-c-free.json", Provider: "codex", Models: []string{"gpt-5.4"}, Data: tokenDoc},
 	}}
 	r := newHostRuntime(t, client)
 	cfg := config.Default()
@@ -147,13 +163,16 @@ func TestActivateAllSkipsProAndFreeOnSchedule(t *testing.T) {
 	if skipped["pro-1"] != "GPT Pro，已跳过" {
 		t.Fatalf("pro skip = %q", skipped["pro-1"])
 	}
+	if skipped["lite-1"] != "Pro Lite，已跳过" {
+		t.Fatalf("prolite skip = %q", skipped["lite-1"])
+	}
 	if skipped["free-1"] != "Free，已跳过" {
 		t.Fatalf("free skip = %q", skipped["free-1"])
 	}
 	if _, ok := skipped["plus-1"]; ok {
 		t.Fatalf("plus was skipped: %+v", results)
 	}
-	if !strings.Contains(summary, "跳过 2") {
+	if !strings.Contains(summary, "跳过 3") {
 		t.Fatalf("summary = %q", summary)
 	}
 

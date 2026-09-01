@@ -29,6 +29,22 @@ func TestProLiteIsNotGPTPro(t *testing.T) {
 	if plan != "prolite" || IsGPTPro(plan) {
 		t.Fatalf("prolite treated as pro: %q", plan)
 	}
+	if !SkipOnSchedule(plan) {
+		t.Fatal("prolite should skip on schedule like pro")
+	}
+}
+
+func TestLiveProLiteBeatsPlusFilename(t *testing.T) {
+	token := fakeJWT(map[string]any{
+		"https://api.openai.com/auth": map[string]any{
+			"chatgpt_plan_type": "prolite",
+		},
+	})
+	body, _ := json.Marshal(map[string]string{"id_token": token, "email": "a@b.com"})
+	plan := FromAuth([]string{"codex-056fd6fc-glj2369@proton.me-plus.json"}, body)
+	if plan != "prolite" {
+		t.Fatalf("live plan = %q, want prolite over plus filename", plan)
+	}
 }
 
 func TestPlanFromJWT(t *testing.T) {
@@ -82,8 +98,8 @@ func TestSkipOnScheduleCoversProAndFree(t *testing.T) {
 	if SkipOnSchedule(plus) {
 		t.Fatalf("plus should still refresh, got skip for %q", plus)
 	}
-	if SkipReason("pro") != "GPT Pro，已跳过" || SkipReason("free") != "Free，已跳过" {
-		t.Fatalf("SkipReason pro=%q free=%q", SkipReason("pro"), SkipReason("free"))
+	if SkipReason("pro") != "GPT Pro，已跳过" || SkipReason("free") != "Free，已跳过" || SkipReason("prolite") != "Pro Lite，已跳过" {
+		t.Fatalf("SkipReason pro=%q free=%q lite=%q", SkipReason("pro"), SkipReason("free"), SkipReason("prolite"))
 	}
 }
 

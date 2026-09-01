@@ -21,7 +21,7 @@ POST /v0/management/plugin-store/quota-schedule-refresh/install
 发布包：
 
 ```text
-quota-schedule-refresh_0.7.14_linux_amd64.zip
+quota-schedule-refresh_0.7.15_linux_amd64.zip
 checksums.txt
 ```
 
@@ -51,7 +51,7 @@ checksums.txt
 | `model` | Codex 模型，空则自动选用可用模型里版本最高的 gpt 系列；一个都拿不到时本次刷新以「没有可用模型」结束 |
 | `timeout_seconds` | 单次请求超时（秒），默认 `60` |
 | `enable_disabled` | 刷新前启用已禁用的凭证 |
-| `skip_gpt_pro` | 定时刷新跳过 GPT Pro 和 Free 凭证，默认开启；页面手动勾选仍会执行 |
+| `skip_gpt_pro` | 定时刷新跳过 GPT Pro、Pro Lite 和 Free 凭证，默认开启；页面手动勾选仍会执行 |
 | `retry_count` | 失败重试次数，默认 `2` |
 | `retry_interval_seconds` | 重试间隔（秒），默认 `2` |
 | `prompt` | 刷新用的提示词，默认 `hello` |
@@ -73,8 +73,7 @@ plugins:
       prompt: "hello"
 ```
 
-凭证逐个刷新，没有并发配置项：刷新前要临时提升目标凭证的优先级并把它设为 CPA 的首选账号，
-这些都是全局状态，并行执行会互相覆盖。
+凭证逐个刷新，没有并发配置项：刷新前会看同 provider 里当前号是不是唯一最高优先级；不是则临时抬到 `max(最高+1, 1000)`，请求结束后只把 `priority` 改回去。这些都是全局状态，并行执行会互相覆盖。回写失败会记在执行记录里，不把已经成功的刷新改判失败。
 
 ## 编译
 

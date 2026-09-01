@@ -30,17 +30,21 @@ var planKeys = []string{
 }
 
 func FromAuth(names []string, data []byte, extras ...map[string]any) string {
-	for _, name := range names {
-		if plan := fromFilename(name); plan != "" {
-			return plan
-		}
-	}
+	// 凭证文件名可能还停在旧套餐（plus.json），以 token / metadata 里的当前套餐为准。
 	for _, extra := range extras {
 		if plan := fromValue(extra); plan != "" {
 			return plan
 		}
 	}
-	return fromJSON(data)
+	if plan := fromJSON(data); plan != "" {
+		return plan
+	}
+	for _, name := range names {
+		if plan := fromFilename(name); plan != "" {
+			return plan
+		}
+	}
+	return ""
 }
 
 func IsGPTPro(plan string) bool {
@@ -48,10 +52,10 @@ func IsGPTPro(plan string) bool {
 }
 
 // SkipOnSchedule is true for plans the skip_gpt_pro toggle also leaves out of
-// a scheduled run: GPT Pro and Free. Plus / team / the rest still refresh.
+// a scheduled run: GPT Pro、Pro Lite 和 Free。Plus / team 等仍刷新。
 func SkipOnSchedule(plan string) bool {
 	switch Normalize(plan) {
-	case "pro", "free":
+	case "pro", "prolite", "free":
 		return true
 	default:
 		return false
@@ -62,6 +66,8 @@ func SkipReason(plan string) string {
 	switch Normalize(plan) {
 	case "pro":
 		return "GPT Pro，已跳过"
+	case "prolite":
+		return "Pro Lite，已跳过"
 	case "free":
 		return "Free，已跳过"
 	default:
