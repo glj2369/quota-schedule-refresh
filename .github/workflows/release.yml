@@ -1,0 +1,172 @@
+name: Release
+
+# Publishes a release when a v* tag is pushed.
+#
+# Asset layout is dictated by the CPA plugin store and must not drift:
+#   quota-schedule-refresh_<version>_linux_amd64.zip   (one flat entry:
+#                                                       quota-schedule-refresh.so)
+#   checksums.txt                                      (sha256sum format,
+#                                                       zip first then .so)
+#
+# Uses only the built-in GITHUB_TOKEN; no external credentials are required.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing v* tag to build and publish"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # Everything ABI-sensitive happens here, inside the same Debian 12 image the
+  # CPA container runs (glibc 2.36). Packaging is deliberately left to the
+  # release job: this image has no `zip`, and zipping cannot affect the ABI.
+  build:
+    name: verify + build .so
+    runs-on: ubuntu-latest
+    container: golang:1.25-bookworm
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Resolve version from tag
+        id: version
+        run: |
+          raw="${{ github.event.inputs.tag || github.ref_name }}"
+          version="${raw#v}"
+          if [ -z "$version" ] || [ "$version" = "$raw" ]; then
+            echo "Tag '$raw' must look like v<version>, e.g. v0.8.0"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$raw"
+          echo "version=$version"
+
+      # Refuses to publish when the tag and the three in-repo version
+      # declarations disagree, which is how versions got out of step before.
+      - name: Check version consistency
+        run: bash .github/scripts/check-version.sh "${{ steps.version.outputs.version }}"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Record toolchain and libc
+        run: |
+          go version
+          gcc --version | head -1
+          ldd --version | head -1
+          . /etc/os-release && echo "base image: $PRETTY_NAME"
+
+      - name: gofmt
+        run: |
+          files=$(gofmt -l .)
+          if [ -n "$files" ]; then
+            echo "These files are not gofmt-clean:"
+            echo "$files"
+            exit 1
+          fi
+          echo "gofmt clean"
+
+      - name: go vet
+        env:
+          CGO_ENABLED: "1"
+        run: go vet ./...
+
+      - name: go test
+        run: go test ./internal/...
+
+      - name: Build c-shared library
+        env:
+          CGO_ENABLED: "1"
+          GOOS: linux
+          GOARCH: amd64
+        run: |
+          go build -buildmode=c-shared -o quota-schedule-refresh.so .
+          rm -f quota-schedule-refresh.h
+          ls -l quota-schedule-refresh.so
+
+      - name: glibc ABI gate
+        run: bash .github/scripts/check-abi.sh quota-schedule-refresh.so
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: plugin-so
+          path: quota-schedule-refresh.so
+          retention-days: 1
+          if-no-files-found: error
+
+  # Packaging and publishing. Runs on the stock runner, which has `zip`, and is
+  # the only job granted write access.
+  publish:
+    name: package + publish release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: plugin-so
+
+      # `zip -j` keeps the archive flat, matching every previously published
+      # asset: the store expects quota-schedule-refresh.so at the zip root.
+      - name: Package
+        run: |
+          set -euo pipefail
+          zip_name="quota-schedule-refresh_${VERSION}_linux_amd64.zip"
+          zip -j -q "$zip_name" quota-schedule-refresh.so
+          sha256sum "$zip_name" quota-schedule-refresh.so > checksums.txt
+          echo "ZIP_NAME=$zip_name" >> "$GITHUB_ENV"
+          cat checksums.txt
+
+      - name: Verify asset layout
+        run: |
+          set -euo pipefail
+          echo "-- entries in $ZIP_NAME --"
+          unzip -l "$ZIP_NAME"
+          entries=$(unzip -Z1 "$ZIP_NAME")
+          if [ "$entries" != "quota-schedule-refresh.so" ]; then
+            echo "FAIL: archive must contain exactly one flat entry named"
+            echo "      quota-schedule-refresh.so, but contains:"
+            echo "$entries"
+            exit 1
+          fi
+          sha256sum -c checksums.txt
+          echo "asset layout matches the published convention"
+
+      - name: Create release and upload assets
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release $TAG exists; replacing assets"
+            gh release upload "$TAG" "$ZIP_NAME" checksums.txt --clobber
+          else
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --generate-notes \
+              "$ZIP_NAME" checksums.txt
+          fi
+          gh release view "$TAG" --json assets \
+            --jq '.assets[] | "\(.name)\t\(.size)"'

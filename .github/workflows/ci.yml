@@ -1,0 +1,89 @@
+name: CI
+
+# Fast feedback on every push and pull request. No secrets are used and nothing
+# is published; this workflow only reads the repository.
+on:
+  push:
+    branches: ["**"]
+    tags-ignore: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # gofmt / vet / unit tests. Runs on the stock runner because none of these
+  # produce a shipped artifact, so the runner's newer glibc is irrelevant here.
+  check:
+    name: gofmt / vet / test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: gofmt
+        run: |
+          files=$(gofmt -l .)
+          if [ -n "$files" ]; then
+            echo "These files are not gofmt-clean:"
+            echo "$files"
+            echo
+            echo "Run: gofmt -w ."
+            exit 1
+          fi
+          echo "gofmt clean"
+
+      - name: go vet
+        env:
+          CGO_ENABLED: "1"
+        run: go vet ./...
+
+      - name: go test
+        run: go test ./internal/...
+
+  # Compiles the real c-shared artifact in the same image the release uses, so
+  # an ABI or cgo regression shows up on the push that caused it rather than at
+  # tag time. Runs in parallel with `check`.
+  build:
+    name: c-shared build + glibc ABI gate
+    runs-on: ubuntu-latest
+    # Must match the runtime: eceasy/cli-proxy-api:latest is Debian 12 (glibc
+    # 2.36). Building on the bare runner (Ubuntu 24.04, glibc 2.39) would emit
+    # symbol requirements the CPA process cannot satisfy.
+    container: golang:1.25-bookworm
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Record toolchain and libc
+        run: |
+          go version
+          gcc --version | head -1
+          ldd --version | head -1
+          . /etc/os-release && echo "base image: $PRETTY_NAME"
+
+      - name: Build c-shared library
+        env:
+          CGO_ENABLED: "1"
+          GOOS: linux
+          GOARCH: amd64
+        run: |
+          go build -buildmode=c-shared -o quota-schedule-refresh.so .
+          rm -f quota-schedule-refresh.h
+          ls -l quota-schedule-refresh.so
+
+      - name: glibc ABI gate
+        run: bash .github/scripts/check-abi.sh quota-schedule-refresh.so
