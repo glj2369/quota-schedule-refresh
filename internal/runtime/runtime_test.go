@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"quota-schedule-refresh/internal/config"
 	"quota-schedule-refresh/internal/host"
@@ -222,3 +223,49 @@ func TestDefaultModelIsEmptyWithoutAnySource(t *testing.T) {
 		t.Fatalf("defaultModel() = %q, want an empty string", got)
 	}
 }
+
+func TestSkipMissedScheduleAfterReload(t *testing.T) {
+	r := newHostRuntime(t, &fakeHost{})
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 1, 16, 0, 28, 0, loc)
+	r.now = func() time.Time { return now }
+	r.config.DailyAt = "08:00"
+	r.config.Timezone = "Asia/Shanghai"
+
+	if wait := r.preScanWait(); wait != 0 {
+		t.Fatalf("wait = %s, want 0 after today's 08:00", wait)
+	}
+	if !r.skipMissedSchedule() {
+		t.Fatal("reload after 08:00 should skip catch-up")
+	}
+	wait := r.preScanWait()
+	next := now.Add(wait)
+	want := time.Date(2026, 9, 2, 8, 0, 0, 0, loc)
+	if next.Sub(want) > time.Second || want.Sub(next) > time.Second {
+		t.Fatalf("next scan = %s, want %s", next, want)
+	}
+}
+
+func TestScheduleStillWaitsBeforeTrigger(t *testing.T) {
+	r := newHostRuntime(t, &fakeHost{})
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 2, 7, 0, 0, 0, loc)
+	r.now = func() time.Time { return now }
+	r.config.DailyAt = "08:00"
+	r.config.Timezone = "Asia/Shanghai"
+
+	wait := r.preScanWait()
+	if wait != time.Hour {
+		t.Fatalf("wait = %s, want 1h until 08:00", wait)
+	}
+	if r.skipMissedSchedule() {
+		t.Fatal("before 08:00 should not consume the day's trigger")
+	}
+}
+

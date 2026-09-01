@@ -16,7 +16,7 @@ import (
 	"quota-schedule-refresh/internal/wake"
 )
 
-const pluginVersion = "0.7.15"
+const pluginVersion = "0.7.16"
 
 const busyRetryInterval = 30 * time.Second
 
@@ -182,14 +182,37 @@ func (r *Runtime) runLoop(ctx context.Context) {
 			return
 		}
 		wait := r.preScanWait()
-		if wait > 0 && !sleepCtx(ctx, wait) {
-			return
+		if wait > 0 {
+			if !sleepCtx(ctx, wait) {
+				return
+			}
+		} else if r.skipMissedSchedule() {
+			// 热更新或重启发生在今天的点之后：等到明天，不把过点的定时补跑一遍。
+			continue
 		}
 		// 手动执行占用时定时触发会被跳过，此处退避避免空转。
 		if !r.runOnce(ctx, "schedule", nil) && !sleepCtx(ctx, busyRetryInterval) {
 			return
 		}
 	}
+}
+
+// skipMissedSchedule 只在 wait==0 时调用。等到点再醒的那次 wait 当时大于 0，不会进来。
+func (r *Runtime) skipMissedSchedule() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	now := r.now()
+	today := r.config.TodayTrigger(now)
+	if now.Before(today) {
+		return false
+	}
+	ranToday := !r.lastScanAt.IsZero() && !r.lastScanAt.In(r.config.Location()).Before(today)
+	if ranToday {
+		return false
+	}
+	r.lastScanAt = today
+	r.nextScanAt = r.config.NextTrigger(now)
+	return true
 }
 
 func (r *Runtime) preScanWait() time.Duration {
