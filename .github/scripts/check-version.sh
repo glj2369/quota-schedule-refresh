@@ -15,11 +15,11 @@ registry="registry.json"
 readme="README.md"
 
 # const pluginVersion = "x.y.z"
-go_ver=$(sed -n 's/.*pluginVersion[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$runtime_go" | head -1)
+go_ver=$(sed -n 's/.*pluginVersion[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$runtime_go" | sed -n '1p')
 # "version": "x.y.z"
-reg_ver=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$registry" | head -1)
+reg_ver=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$registry" | sed -n '1p')
 # quota-schedule-refresh_x.y.z_linux_amd64.zip
-readme_ver=$(sed -n 's/.*quota-schedule-refresh_\([^_]*\)_linux_amd64\.zip.*/\1/p' "$readme" | head -1)
+readme_ver=$(sed -n 's/.*quota-schedule-refresh_\([^_]*\)_linux_amd64\.zip.*/\1/p' "$readme" | sed -n '1p')
 
 printf 'expected version (from tag): %s\n\n' "$VERSION"
 printf '  %-32s %-14s %s\n' FILE FOUND STATUS
