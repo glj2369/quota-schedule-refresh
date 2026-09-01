@@ -1,0 +1,154 @@
+package runtime
+
+import (
+	"context"
+	"errors"
+	"path/filepath"
+	"strings"
+	"sync/atomic"
+	"testing"
+
+	"quota-schedule-refresh/internal/config"
+	"quota-schedule-refresh/internal/host"
+)
+
+// fakeHost 是一台什么都答不上来的宿主：凭证列得出来，但模型一个都查不到。
+// 这正是「彻底没有可用模型」的场景。
+type fakeHost struct {
+	files     []host.AuthFile
+	executed  atomic.Int64
+	lastModel atomic.Value
+}
+
+func (f *fakeHost) ModelExecute(_ context.Context, request host.ModelExecuteRequest) (host.ModelExecuteResponse, error) {
+	f.executed.Add(1)
+	f.lastModel.Store(request.Model)
+	return host.ModelExecuteResponse{StatusCode: 200, Body: []byte(`{"choices":[{"message":{"content":"ok"}}]}`)}, nil
+}
+
+func (f *fakeHost) HTTPDo(_ context.Context, _ host.HTTPRequest) (host.HTTPResponse, error) {
+	return host.HTTPResponse{}, errors.New("no http from the fake host")
+}
+
+func (f *fakeHost) ListAuthFiles(_ context.Context) ([]host.AuthFile, error) {
+	return f.files, nil
+}
+
+func (f *fakeHost) GetAuthFile(_ context.Context, _ string) (host.AuthFile, error) {
+	return host.AuthFile{}, errors.New("not available")
+}
+
+func (f *fakeHost) GetRuntimeAuthFile(_ context.Context, _ string) (host.AuthFile, error) {
+	return host.AuthFile{}, errors.New("not available")
+}
+
+func (f *fakeHost) SaveAuthFile(_ context.Context, _ string, _ []byte) error {
+	return nil
+}
+
+// newHostRuntime 把工作目录换到一个没有 config.yaml 的临时目录，
+// 这样 localCPAListen 找不到 api-key，/v1/models 那条来源自然为空。
+func newHostRuntime(t *testing.T, client host.Client) *Runtime {
+	t.Helper()
+	t.Chdir(t.TempDir())
+	t.Setenv("QUOTA_SCHEDULE_REFRESH_SETTINGS", filepath.Join(t.TempDir(), "settings.json"))
+	return New(client)
+}
+
+func TestChooseModelPrefersConfiguredThenHighestVersion(t *testing.T) {
+	available := []string{"gpt-5.3-codex-spark", "gpt-5.6-luna", "gpt-5.4"}
+	if got := chooseModel(" gpt-5.6-sol ", available, "gpt-5.4"); got != "gpt-5.6-sol" {
+		t.Fatalf("chooseModel with a configured model = %q, want gpt-5.6-sol", got)
+	}
+	if got := chooseModel("", available, "gpt-5.4"); got != "gpt-5.6-luna" {
+		t.Fatalf("chooseModel = %q, want the highest version gpt-5.6-luna", got)
+	}
+	if got := chooseModel("", nil, " gpt-5.4 "); got != "gpt-5.4" {
+		t.Fatalf("chooseModel with only a fallback = %q, want gpt-5.4", got)
+	}
+}
+
+// TestChooseModelReturnsEmptyWhenNothingIsAvailable 锁住去掉硬编码 gpt-5-mini 的效果：
+// 没有任何来源时必须诚实地返回空，而不是猜一个可能已经下线的名字。
+func TestChooseModelReturnsEmptyWhenNothingIsAvailable(t *testing.T) {
+	if got := chooseModel("", nil, ""); got != "" {
+		t.Fatalf("chooseModel with no sources = %q, want an empty string", got)
+	}
+	if got := chooseModel("  ", []string{}, "  "); got != "" {
+		t.Fatalf("chooseModel with blank sources = %q, want an empty string", got)
+	}
+}
+
+// TestActivateAllReportsMissingModel 是改动 B 的行为测试：一个模型都拿不到时，
+// 执行记录里要写「没有可用模型」，而且不能真的对宿主发一次注定失败的请求。
+func TestActivateAllReportsMissingModel(t *testing.T) {
+	client := &fakeHost{files: []host.AuthFile{{
+		ID:       "codex-1",
+		Name:     "codex-account",
+		Provider: "codex",
+		Account:  "someone@example.com",
+	}}}
+	r := newHostRuntime(t, client)
+
+	cfg := config.Default()
+	cfg.Model = ""
+	cfg.SkipGPTPro = false
+
+	results, summary := r.activateAll(context.Background(), cfg, nil)
+	if len(results) != 1 {
+		t.Fatalf("activateAll returned %d results, want 1: %+v", len(results), results)
+	}
+	got := results[0]
+	if got.Success || got.Status != "failed" {
+		t.Fatalf("result = %+v, want a failure", got)
+	}
+	if !strings.Contains(got.LastError, "没有可用模型") {
+		t.Fatalf("LastError = %q, want it to name the missing model list", got.LastError)
+	}
+	if strings.Contains(got.LastError, "gpt-5-mini") || got.Model == "gpt-5-mini" {
+		t.Fatalf("result still mentions the hardcoded model: %+v", got)
+	}
+	if n := client.executed.Load(); n != 0 {
+		t.Fatalf("sent %d model executions, want 0 when there is no model to send", n)
+	}
+	if !strings.Contains(summary, "失败 1") {
+		t.Fatalf("summary = %q, want it to count the credential as failed", summary)
+	}
+}
+
+// TestActivateAllUsesHighestVersionFromCredential 确认凭证自带模型列表时，
+// 回落同样挑版本最高的，而不是列表里的第一个。
+func TestActivateAllUsesHighestVersionFromCredential(t *testing.T) {
+	client := &fakeHost{files: []host.AuthFile{{
+		ID:       "codex-1",
+		Name:     "codex-account",
+		Provider: "codex",
+		Models:   []string{"gpt-5.3-codex-spark", "gpt-5.6-luna", "gpt-5.4"},
+	}}}
+	r := newHostRuntime(t, client)
+
+	cfg := config.Default()
+	cfg.Model = ""
+	cfg.SkipGPTPro = false
+	cfg.RetryCount = 0
+
+	results, _ := r.activateAll(context.Background(), cfg, nil)
+	if len(results) != 1 {
+		t.Fatalf("activateAll returned %d results, want 1", len(results))
+	}
+	if results[0].Model != "gpt-5.6-luna" {
+		t.Fatalf("used model %q, want the highest version gpt-5.6-luna", results[0].Model)
+	}
+	if got, _ := client.lastModel.Load().(string); got != "gpt-5.6-luna" {
+		t.Fatalf("host was asked for model %q, want gpt-5.6-luna", got)
+	}
+}
+
+// TestDefaultModelIsEmptyWithoutAnySource 确认 /status 的 default_model 在
+// 查不到模型时是空的：页面会显示 "-"，比显示一个不存在的名字诚实。
+func TestDefaultModelIsEmptyWithoutAnySource(t *testing.T) {
+	r := newHostRuntime(t, &fakeHost{})
+	if got := r.defaultModel(); got != "" {
+		t.Fatalf("defaultModel() = %q, want an empty string", got)
+	}
+}

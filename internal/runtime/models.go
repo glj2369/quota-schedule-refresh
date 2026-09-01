@@ -138,7 +138,8 @@ func (r *Runtime) isStopped() bool {
 }
 
 // sortedModels 固定下拉列表的顺序：CPA 的 /v1/models 每次返回的次序都不同。
-// gpt 系列排在前面，同系列内按版本号数值升序，这样默认取第一个也是可用的对话模型。
+// gpt 系列排在前面，同系列内按版本号数值升序，这是下拉列表要的展示顺序。
+// 注意升序意味着第一个是版本最低的，替用户选模型请走 preferredFallbackModel。
 func sortedModels(models []string) []string {
 	out := append([]string(nil), models...)
 	sort.SliceStable(out, func(i, j int) bool {
@@ -149,6 +150,45 @@ func sortedModels(models []string) []string {
 		return naturalLess(left, right)
 	})
 	return out
+}
+
+// preferredFallbackModel 挑用户没有配置模型时替他做主的那一个：候选里版本最高的
+// gpt 系列模型。下拉列表按版本升序展示，直接取第一个会静默降级到最老的版本。
+// 同一版本内取排序靠前的，于是 gpt-5.4 胜过 gpt-5.4-mini。
+// 没有任何 gpt 系列模型时退回排序后的第一个，一个都没有时返回空串。
+func preferredFallbackModel(models []string) string {
+	ordered := sortedModels(models)
+	best, bestVersion := "", ""
+	for _, model := range ordered {
+		version := gptVersion(strings.ToLower(model))
+		if version == "" {
+			continue
+		}
+		if best == "" || naturalLess(bestVersion, version) {
+			best, bestVersion = model, version
+		}
+	}
+	if best != "" {
+		return best
+	}
+	if len(ordered) > 0 {
+		return ordered[0]
+	}
+	return ""
+}
+
+// gptVersion 取 "gpt-" 后面的版本号段，比如 gpt-5.6-sol 得到 "5.6"。
+// 不是 gpt 系列、或版本位上不是数字（gpt-image-2）时返回空串。
+func gptVersion(lower string) string {
+	if !strings.HasPrefix(lower, "gpt-") {
+		return ""
+	}
+	rest := lower[len("gpt-"):]
+	end := 0
+	for end < len(rest) && (isDigit(rest[end]) || rest[end] == '.') {
+		end++
+	}
+	return strings.Trim(rest[:end], ".")
 }
 
 func modelGroup(lower string) int {

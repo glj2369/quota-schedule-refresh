@@ -16,13 +16,13 @@ import (
 	"quota-schedule-refresh/internal/wake"
 )
 
-const pluginVersion = "0.7.10"
+const pluginVersion = "0.7.11"
 
 const busyRetryInterval = 30 * time.Second
 
-// lastResortModel 只在 CPA 模型列表和凭证自带列表都拿不到时使用。
-// CPA 上线新模型后这个名字可能已经不存在，此时刷新会以「模型不可用」失败。
-const lastResortModel = "gpt-5-mini"
+// noModelMessage 是彻底找不到模型时记进执行记录的原因。猜一个模型名去试，
+// 换来的只是一条「模型 xxx 不可用」，把真正的原因藏了起来。
+const noModelMessage = "没有可用模型：CPA 未返回任何模型，凭证也没带模型列表，请在设置里指定模型"
 
 type historyEntry struct {
 	At      time.Time     `json:"at"`
@@ -246,7 +246,7 @@ func (r *Runtime) activateAll(ctx context.Context, cfg config.Config, authIDs []
 		Config:           cfg,
 		PinPreferredAuth: r.pinPreferredAuth,
 	}
-	fallbackModel := r.firstListedModel()
+	fallbackModel := r.defaultModel()
 	targets := make([]candidate, 0, len(files))
 	skipped := make([]wake.Result, 0)
 	wanted := selectedAuthSet(authIDs)
@@ -288,6 +288,18 @@ func (r *Runtime) activateAll(ctx context.Context, cfg config.Config, authIDs []
 	for _, target := range targets {
 		if ctx.Err() != nil {
 			break
+		}
+		// 没有模型就没有可发的请求。以前这里会拿一个硬编码的名字去试，
+		// 失败信息变成「模型 gpt-5-mini 不可用」，掩盖了真正的原因。
+		if target.model == "" {
+			collected = append(collected, wake.Result{
+				AuthID:    target.authID,
+				Label:     target.label,
+				Status:    "failed",
+				Success:   false,
+				LastError: noModelMessage,
+			})
+			continue
 		}
 		collected = append(collected, activator.Activate(ctx, target.authID, target.label, target.model, target.disabled))
 	}
@@ -388,11 +400,10 @@ func (r *Runtime) listedModels() []string {
 	return out
 }
 
-func (r *Runtime) firstListedModel() string {
-	if models := r.availableModels(); len(models) > 0 {
-		return models[0]
-	}
-	return lastResortModel
+// defaultModel 是配置留空时替用户选用的模型，同时也是 /status 里展示的
+// default_model。一个都拿不到时返回空串，由调用方决定怎么说明。
+func (r *Runtime) defaultModel() string {
+	return preferredFallbackModel(r.availableModels())
 }
 
 type candidate struct {
@@ -519,13 +530,10 @@ func chooseModel(configured string, available []string, fallback string) string 
 	if configured != "" {
 		return configured
 	}
-	if len(available) > 0 {
-		return available[0]
+	if picked := preferredFallbackModel(available); picked != "" {
+		return picked
 	}
-	if trimmed := strings.TrimSpace(fallback); trimmed != "" {
-		return trimmed
-	}
-	return lastResortModel
+	return strings.TrimSpace(fallback)
 }
 
 func firstNonBlank(values ...string) string {
@@ -629,7 +637,7 @@ type statusPayload struct {
 }
 
 func (r *Runtime) currentStatus() statusPayload {
-	listed := r.firstListedModel()
+	listed := r.defaultModel()
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return statusPayload{

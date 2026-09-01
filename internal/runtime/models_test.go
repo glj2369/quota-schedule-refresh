@@ -288,3 +288,68 @@ func TestSortedModelsComparesVersionsNumerically(t *testing.T) {
 		t.Fatalf("sortedModels() = %v, want %v", got, want)
 	}
 }
+
+// TestPreferredFallbackModelPicksHighestVersion 锁住回落方向：配置留空时不能
+// 静默降级到列表里最老的版本，那正是 sortedModels 的第一个。
+func TestPreferredFallbackModelPicksHighestVersion(t *testing.T) {
+	input := []string{
+		"gpt-5.6-luna",
+		"gpt-5.3-codex-spark",
+		"gpt-5.4",
+		"codex-auto-review",
+		"gpt-5.5",
+	}
+	got := preferredFallbackModel(input)
+	if got != "gpt-5.6-luna" {
+		t.Fatalf("preferredFallbackModel() = %q, want the highest gpt version gpt-5.6-luna", got)
+	}
+	if first := sortedModels(input)[0]; got == first {
+		t.Fatalf("preferredFallbackModel() returned the lowest version %q, the old behaviour", first)
+	}
+	if input[0] != "gpt-5.6-luna" {
+		t.Fatal("preferredFallbackModel must not reorder the input slice")
+	}
+}
+
+func TestPreferredFallbackModelComparesVersionsNumerically(t *testing.T) {
+	// 字典序会把 gpt-5.9 判成最高，版本号必须按数值比。
+	got := preferredFallbackModel([]string{"gpt-5.9", "gpt-5.10", "gpt-5.2"})
+	if got != "gpt-5.10" {
+		t.Fatalf("preferredFallbackModel() = %q, want gpt-5.10", got)
+	}
+}
+
+// TestPreferredFallbackModelPrefersBaseOverVariant 确认同一版本内不会挑到 mini：
+// 替用户做主时降规格和降版本一样不可接受。
+func TestPreferredFallbackModelPrefersBaseOverVariant(t *testing.T) {
+	got := preferredFallbackModel([]string{"gpt-5.4-mini", "gpt-5.4", "gpt-5.3"})
+	if got != "gpt-5.4" {
+		t.Fatalf("preferredFallbackModel() = %q, want the base gpt-5.4", got)
+	}
+}
+
+func TestPreferredFallbackModelWithoutGPTModels(t *testing.T) {
+	got := preferredFallbackModel([]string{"codex-auto-review", "codex-mini"})
+	if got != "codex-auto-review" {
+		t.Fatalf("preferredFallbackModel() = %q, want the first sorted model", got)
+	}
+	if got := preferredFallbackModel(nil); got != "" {
+		t.Fatalf("preferredFallbackModel(nil) = %q, want an empty string", got)
+	}
+}
+
+func TestGPTVersion(t *testing.T) {
+	cases := map[string]string{
+		"gpt-5.6-sol":         "5.6",
+		"gpt-5.3-codex-spark": "5.3",
+		"gpt-5":               "5",
+		"gpt-5-mini":          "5",
+		"gpt-image-2":         "",
+		"codex-auto-review":   "",
+	}
+	for input, want := range cases {
+		if got := gptVersion(input); got != want {
+			t.Errorf("gptVersion(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
