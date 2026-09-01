@@ -88,7 +88,7 @@ button:disabled{opacity:.6;cursor:not-allowed}
   </nav>
   <div id="panel-run" class="tab-panel active">
     <label>选择要刷新的凭证</label>
-    <p class="hint">只显示 Codex 账号。开启跳过 GPT Pro 后，定时刷新不含 Pro 凭证；手动勾选仍会执行。</p>
+    <p class="hint">只显示 Codex 账号。开启跳过 GPT Pro / Free 后，定时刷新不含这两类凭证；手动勾选仍会执行。</p>
     <div id="credentialList" class="list"></div>
     <div class="actions">
       <button type="button" class="secondary" id="reloadBtn">刷新列表</button>
@@ -140,7 +140,7 @@ button:disabled{opacity:.6;cursor:not-allowed}
         <label>开关</label>
         <div class="form" style="margin-top:0">
           <label class="toggle" for="f_schedule_enabled"><input id="f_schedule_enabled" type="checkbox"><span>启用定时刷新</span></label>
-          <label class="toggle" for="f_skip_gpt_pro"><input id="f_skip_gpt_pro" type="checkbox"><span>定时刷新跳过 GPT Pro</span></label>
+          <label class="toggle" for="f_skip_gpt_pro"><input id="f_skip_gpt_pro" type="checkbox"><span>定时刷新跳过 GPT Pro / Free</span></label>
           <label class="toggle" for="f_enable_disabled"><input id="f_enable_disabled" type="checkbox"><span>刷新前启用已禁用凭证</span></label>
         </div>
       </div>
@@ -348,9 +348,14 @@ async function loadFiles(){
   }
   box.innerHTML=files.map(function(file){
     const label=file.label||file.auth_id;
-    const pro=!!file.gpt_pro;
-    const skip=skipGPTPro&&pro;
-    const extra=(file.disabled?"（已禁用）":"")+(pro?(skip?"（Pro·定时跳过）":"（Pro）"):(file.plan?"（"+file.plan+"）":""));
+    const skip=skipGPTPro&&!!file.skip_schedule;
+    let badge="";
+    if(file.gpt_pro){
+      badge=skip?"（Pro·定时跳过）":"（Pro）";
+    }else if(file.plan){
+      badge=skip?"（"+file.plan+"·定时跳过）":"（"+file.plan+"）";
+    }
+    const extra=(file.disabled?"（已禁用）":"")+badge;
     return '<label class="item'+(file.disabled||skip?" disabled":"")+'"><input type="checkbox" value="'+esc(file.auth_id)+'"'+(skip?"":" checked")+'> '+esc(label)+extra+'</label>';
   }).join("");
 }

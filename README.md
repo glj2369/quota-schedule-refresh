@@ -21,7 +21,7 @@ POST /v0/management/plugin-store/quota-schedule-refresh/install
 发布包：
 
 ```text
-quota-schedule-refresh_0.7.12_linux_amd64.zip
+quota-schedule-refresh_0.7.13_linux_amd64.zip
 checksums.txt
 ```
 
@@ -51,7 +51,7 @@ checksums.txt
 | `model` | Codex 模型，空则自动选用可用模型里版本最高的 gpt 系列；一个都拿不到时本次刷新以「没有可用模型」结束 |
 | `timeout_seconds` | 单次请求超时（秒），默认 `60` |
 | `enable_disabled` | 刷新前启用已禁用的凭证 |
-| `skip_gpt_pro` | 定时刷新跳过 GPT Pro 凭证，默认开启；页面手动勾选仍会执行 |
+| `skip_gpt_pro` | 定时刷新跳过 GPT Pro 和 Free 凭证，默认开启；页面手动勾选仍会执行 |
 | `retry_count` | 失败重试次数，默认 `2` |
 | `retry_interval_seconds` | 重试间隔（秒），默认 `2` |
 | `prompt` | 刷新用的提示词，默认 `hello` |

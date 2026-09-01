@@ -69,6 +69,24 @@ func TestUnknownPlanIsNotPro(t *testing.T) {
 	}
 }
 
+func TestSkipOnScheduleCoversProAndFree(t *testing.T) {
+	free := FromAuth([]string{"codex-user@x.com-free.json"}, nil)
+	if free != "free" || !SkipOnSchedule(free) {
+		t.Fatalf("free = %q skip=%v", free, SkipOnSchedule(free))
+	}
+	pro := FromAuth([]string{"codex-user@x.com-pro.json"}, nil)
+	if !SkipOnSchedule(pro) {
+		t.Fatalf("pro should skip")
+	}
+	plus := FromAuth([]string{"codex-user@x.com-plus.json"}, nil)
+	if SkipOnSchedule(plus) {
+		t.Fatalf("plus should still refresh, got skip for %q", plus)
+	}
+	if SkipReason("pro") != "GPT Pro，已跳过" || SkipReason("free") != "Free，已跳过" {
+		t.Fatalf("SkipReason pro=%q free=%q", SkipReason("pro"), SkipReason("free"))
+	}
+}
+
 func fakeJWT(payload map[string]any) string {
 	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none"}`))
 	raw, _ := json.Marshal(payload)

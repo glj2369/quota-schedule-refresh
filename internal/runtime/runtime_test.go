@@ -116,6 +116,57 @@ func TestActivateAllReportsMissingModel(t *testing.T) {
 	}
 }
 
+func TestActivateAllSkipsProAndFreeOnSchedule(t *testing.T) {
+	client := &fakeHost{files: []host.AuthFile{
+		{ID: "plus-1", Name: "codex-a-plus.json", Provider: "codex", Models: []string{"gpt-5.4"}},
+		{ID: "pro-1", Name: "codex-b-pro.json", Provider: "codex", Models: []string{"gpt-5.4"}},
+		{ID: "free-1", Name: "codex-c-free.json", Provider: "codex", Models: []string{"gpt-5.4"}},
+	}}
+	r := newHostRuntime(t, client)
+	cfg := config.Default()
+	cfg.Model = "gpt-5.4"
+	cfg.SkipGPTPro = true
+	cfg.RetryCount = 0
+
+	results, summary := r.activateAll(context.Background(), cfg, nil)
+	if client.executed.Load() != 1 {
+		t.Fatalf("executed %d, want only the plus account", client.executed.Load())
+	}
+	skipped := map[string]string{}
+	ran := 0
+	for _, item := range results {
+		if item.Status == "skipped" {
+			skipped[item.AuthID] = item.Reply
+			continue
+		}
+		ran++
+	}
+	if ran != 1 {
+		t.Fatalf("ran %d accounts, want 1: %+v", ran, results)
+	}
+	if skipped["pro-1"] != "GPT Pro，已跳过" {
+		t.Fatalf("pro skip = %q", skipped["pro-1"])
+	}
+	if skipped["free-1"] != "Free，已跳过" {
+		t.Fatalf("free skip = %q", skipped["free-1"])
+	}
+	if _, ok := skipped["plus-1"]; ok {
+		t.Fatalf("plus was skipped: %+v", results)
+	}
+	if !strings.Contains(summary, "跳过 2") {
+		t.Fatalf("summary = %q", summary)
+	}
+
+	client.executed.Store(0)
+	picked, _ := r.activateAll(context.Background(), cfg, []string{"free-1"})
+	if client.executed.Load() != 1 {
+		t.Fatalf("manual free refresh executed %d, want 1", client.executed.Load())
+	}
+	if len(picked) != 1 || picked[0].Status == "skipped" {
+		t.Fatalf("manual free refresh = %+v, want it to run", picked)
+	}
+}
+
 // TestActivateAllUsesHighestVersionFromCredential 确认凭证自带模型列表时，
 // 回落同样挑版本最高的，而不是列表里的第一个。
 func TestActivateAllUsesHighestVersionFromCredential(t *testing.T) {

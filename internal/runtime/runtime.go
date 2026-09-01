@@ -16,7 +16,7 @@ import (
 	"quota-schedule-refresh/internal/wake"
 )
 
-const pluginVersion = "0.7.12"
+const pluginVersion = "0.7.13"
 
 const busyRetryInterval = 30 * time.Second
 
@@ -266,14 +266,14 @@ func (r *Runtime) activateAll(ctx context.Context, cfg config.Config, authIDs []
 			continue
 		}
 		// 显式勾选凭证时按用户意图执行，跳过规则只作用于全量（定时）刷新。
-		if cfg.SkipGPTPro && target.gptPro && len(wanted) == 0 {
+		if cfg.SkipGPTPro && target.skipSchedule && len(wanted) == 0 {
 			skipped = append(skipped, wake.Result{
 				AuthID:  target.authID,
 				Label:   target.label,
 				Model:   target.model,
 				Status:  "skipped",
 				Success: false,
-				Reply:   "GPT Pro，已跳过",
+				Reply:   target.skipReply,
 			})
 			continue
 		}
@@ -413,11 +413,12 @@ func (r *Runtime) defaultModel() string {
 }
 
 type candidate struct {
-	authID   string
-	label    string
-	model    string
-	disabled bool
-	gptPro   bool
+	authID       string
+	label        string
+	model        string
+	disabled     bool
+	skipSchedule bool
+	skipReply    string
 }
 
 func candidateFromFile(cfg config.Config, file host.AuthFile, fallbackModel string) (candidate, bool) {
@@ -435,11 +436,12 @@ func candidateFromFile(cfg config.Config, file host.AuthFile, fallbackModel stri
 	label := firstNonBlank(file.Account, file.Email, file.Name, authID)
 	planType := plan.FromAuth([]string{file.Name, file.ID, file.AuthIndex}, file.Data, file.Metadata, file.Attributes)
 	return candidate{
-		authID:   authID,
-		label:    label,
-		model:    model,
-		disabled: file.Disabled,
-		gptPro:   plan.IsGPTPro(planType),
+		authID:       authID,
+		label:        label,
+		model:        model,
+		disabled:     file.Disabled,
+		skipSchedule: plan.SkipOnSchedule(planType),
+		skipReply:    plan.SkipReason(planType),
 	}, true
 }
 
@@ -665,11 +667,12 @@ func (r *Runtime) currentStatus() statusPayload {
 }
 
 type credentialPayload struct {
-	AuthID   string `json:"auth_id"`
-	Label    string `json:"label"`
-	Plan     string `json:"plan,omitempty"`
-	GPTPro   bool   `json:"gpt_pro,omitempty"`
-	Disabled bool   `json:"disabled"`
+	AuthID       string `json:"auth_id"`
+	Label        string `json:"label"`
+	Plan         string `json:"plan,omitempty"`
+	GPTPro       bool   `json:"gpt_pro,omitempty"`
+	SkipSchedule bool   `json:"skip_schedule,omitempty"`
+	Disabled     bool   `json:"disabled"`
 }
 
 func (r *Runtime) listCredentials(ctx context.Context) []credentialPayload {
@@ -693,11 +696,12 @@ func (r *Runtime) listCredentials(ctx context.Context) []credentialPayload {
 		label := firstNonBlank(enriched.Account, enriched.Email, enriched.Name, authID)
 		planType := plan.FromAuth([]string{enriched.Name, enriched.ID, enriched.AuthIndex}, enriched.Data, enriched.Metadata, enriched.Attributes)
 		out = append(out, credentialPayload{
-			AuthID:   authID,
-			Label:    label,
-			Plan:     planType,
-			GPTPro:   plan.IsGPTPro(planType),
-			Disabled: enriched.Disabled,
+			AuthID:       authID,
+			Label:        label,
+			Plan:         planType,
+			GPTPro:       plan.IsGPTPro(planType),
+			SkipSchedule: plan.SkipOnSchedule(planType),
+			Disabled:     enriched.Disabled,
 		})
 	}
 	return out
